@@ -65,6 +65,162 @@ The MVP is complete when:
 - Unit tests and at least one workflow smoke test pass.
 - Documentation explains setup, safety, architecture, and portfolio value.
 
+## Target Architecture
+
+The project should be workflow-first, with LangGraph coordinating explicit
+state transitions and normal Python handling deterministic work. LLM calls
+should be used only where judgment, summarization, or prioritization adds value.
+
+```text
+systemd timer / manual CLI
+  -> Python CLI
+    -> LangGraph workflow
+      -> load + validate config
+      -> prepare run context
+      -> fan out repo inspections
+      -> run read-only checks
+      -> run configured safe commands
+      -> classify + normalize findings
+      -> merge findings
+      -> redact sensitive output
+      -> render Markdown report
+      -> write local report
+      -> send Discord summary
+```
+
+### Proposed Package Layout
+
+```text
+src/langgraph_maintenance_agent/
+  cli.py
+  config.py
+  graph.py
+  state.py
+  schemas.py
+
+  checks/
+    git.py
+    docs.py
+    static.py
+    dependencies.py
+    commands.py
+
+  reporting/
+    markdown.py
+    discord.py
+    redaction.py
+
+  llm/
+    prompts.py
+    summarizer.py
+
+  runtime/
+    paths.py
+    logging.py
+    errors.py
+```
+
+### Deterministic Logic Vs LLM Logic
+
+Use deterministic Python for:
+
+- Config loading and validation.
+- Repository allowlist enforcement.
+- Git metadata collection.
+- Static file/path scanning.
+- Safe command execution.
+- Timeout handling.
+- Secret redaction.
+- Markdown rendering.
+- Discord delivery.
+- Failure report generation.
+
+Use the LLM for:
+
+- Executive-summary generation.
+- Finding deduplication assistance when deterministic keys are insufficient.
+- Suggested next actions.
+- Ambiguous risk explanation.
+- Human-readable prioritization from already structured findings.
+
+Do not make every check an LLM agent. The portfolio value should come from a
+clear production-style workflow with explicit safety boundaries, typed state,
+and selective model use.
+
+### LangGraph Node Design
+
+The primary graph should include these nodes:
+
+- `load_config`: read and validate the allowlist config.
+- `prepare_run`: create run id, timestamps, report paths, and output dirs.
+- `select_repos`: filter enabled repositories.
+- `inspect_repo`: run per-repo deterministic metadata, docs, dependency, and
+  static checks.
+- `run_safe_commands`: run explicitly configured commands with timeouts.
+- `classify_findings`: convert raw results into typed severity-ranked findings.
+- `merge_results`: deduplicate and group findings across repositories.
+- `summarize_with_llm`: optional summary and next-action generation.
+- `redact_report`: remove secrets and unsafe values before persistence/delivery.
+- `render_markdown`: produce the full local Markdown report.
+- `write_report`: write timestamped report and update `reports/latest.md`.
+- `send_discord_summary`: send a safe summary or chunks to Discord.
+- `handle_failure`: write and send a fresh failure report on workflow failure.
+
+### Execution Model
+
+The MVP may run repository checks sequentially. The portfolio-ready version
+should add LangGraph fan-out/fan-in:
+
+```text
+select_repos
+  -> inspect_repo(repo A)
+  -> inspect_repo(repo B)
+  -> inspect_repo(repo N)
+  -> merge_results
+```
+
+The workflow should continue when one repository fails unless the config marks
+that repository as required. Failures should become findings or incomplete-check
+records instead of crashing the entire run when possible.
+
+### Typed State Shape
+
+The graph state should be serializable and testable. A representative shape:
+
+```python
+class AgentState(TypedDict):
+    run_id: str
+    started_at: str
+    config_path: str
+    repos: list[RepoConfig]
+    repo_results: list[RepoResult]
+    findings: list[Finding]
+    skipped_checks: list[SkippedCheck]
+    report_markdown: str | None
+    report_path: str | None
+    discord_status: DeliveryStatus | None
+    errors: list[AgentError]
+```
+
+The concrete implementation can use `TypedDict`, Pydantic models, or a mixture,
+but external data such as config, findings, command results, and delivery status
+should be schema-validated.
+
+### Safety Boundary
+
+The safety boundary must be enforced in code, not only prompts:
+
+- Config allowlist only.
+- Safe command allowlist only.
+- Command timeouts.
+- Blocked unsafe command keywords.
+- No `.env` reads from target repositories.
+- No raw private log reads.
+- Redaction before report persistence and delivery.
+- Generated reports ignored by git.
+- Synthetic public-safe examples only.
+- Fresh failure reports instead of stale `latest.md` reuse.
+
 ## Architecture Checklist
 
 ### Repository Scaffold
@@ -398,4 +554,3 @@ The MVP is complete when:
 - Failure cases are visible and do not produce stale success reports.
 - The codebase demonstrates LangGraph clearly enough to be credible portfolio
   evidence.
-
