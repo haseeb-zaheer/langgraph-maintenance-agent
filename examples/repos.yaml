@@ -1,0 +1,22 @@
+# Public-safe synthetic example config.
+# Replace these paths locally; do not commit private paths or secrets.
+repos:
+  - name: example-python-service
+    path: /path/to/example-python-service
+    enabled: true
+    required: false
+    timeout_seconds: 300
+    checks:
+      - git-status
+      - docs
+      - static-search
+      - dependency-metadata
+    safe_commands: {}
+    notes: "Synthetic public-safe example repository."
+
+report:
+  output_dir: reports
+  filename_prefix: routine-maintenance
+  update_latest: true
+  discord_enabled: false
+

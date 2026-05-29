@@ -509,10 +509,10 @@ Status legend:
 - [x] `.gitignore` ignores local env files, caches, generated reports, logs, and
       common Python build artifacts.
 - [x] `.env.example` exists with placeholder environment variables only.
-- [ ] No Python package metadata exists yet.
-- [ ] No application code exists yet.
-- [ ] No tests exist yet.
-- [ ] No README, architecture doc, examples, or sample reports exist yet.
+- [x] Python package metadata exists.
+- [x] Initial application code exists.
+- [x] Initial smoke tests exist.
+- [x] README, architecture doc, examples, and sample report exist.
 
 ### Phase 1: Project Foundation And Public-Safe Scaffold
 
@@ -521,42 +521,42 @@ without implementing the full agent yet.
 
 Deliverables:
 
-- [ ] Add `pyproject.toml`.
-- [ ] Use package name `langgraph-maintenance-agent` for distribution metadata.
-- [ ] Use import package `langgraph_maintenance_agent`.
-- [ ] Set Python requirement to a modern stable version, preferably
+- [x] Add `pyproject.toml`.
+- [x] Use package name `langgraph-maintenance-agent` for distribution metadata.
+- [x] Use import package `langgraph_maintenance_agent`.
+- [x] Set Python requirement to a modern stable version, preferably
       `>=3.11,<3.15` unless tooling requires otherwise.
-- [ ] Add runtime dependencies:
+- [x] Add runtime dependencies:
       - `langgraph`
       - `pydantic`
       - `PyYAML` or another YAML parser
-- [ ] Add optional LLM dependencies only if the implementation needs them in the
+- [x] Add optional LLM dependencies only if the implementation needs them in the
       same phase. Prefer delaying provider-specific packages until Phase 8.
-- [ ] Add dev dependencies:
+- [x] Add dev dependencies:
       - `pytest`
       - `ruff`
       - type checker if chosen, such as `mypy` or `pyright`
-- [ ] Configure console script:
+- [x] Configure console script:
       `langgraph-maintenance = langgraph_maintenance_agent.cli:main`.
-- [ ] Add package `__init__.py`.
-- [ ] Add initial module files:
+- [x] Add package `__init__.py`.
+- [x] Add initial module files:
       - `cli.py`
       - `config.py`
       - `schemas.py`
       - `state.py`
       - `graph.py`
-- [ ] Add subpackages with `__init__.py`:
+- [x] Add subpackages with `__init__.py`:
       - `checks/`
       - `reporting/`
       - `runtime/`
       - `llm/`
-- [ ] Add `README.md` with a concise public-safe project summary and current
+- [x] Add `README.md` with a concise public-safe project summary and current
       development status.
-- [ ] Add `ARCHITECTURE.md` with the target architecture from this PRD.
-- [ ] Add `docs/safety.md` describing public-repo safety, allowlist-only scans,
+- [x] Add `ARCHITECTURE.md` with the target architecture from this PRD.
+- [x] Add `docs/safety.md` describing public-repo safety, allowlist-only scans,
       secret redaction, and report-only behavior.
-- [ ] Add `examples/repos.yaml` using synthetic paths only.
-- [ ] Add `examples/sample-report.md` with synthetic findings only.
+- [x] Add `examples/repos.yaml` using synthetic paths only.
+- [x] Add `examples/sample-report.md` with synthetic findings only.
 - [ ] Add a license file or explicitly document that license selection is
       pending before publication.
 
