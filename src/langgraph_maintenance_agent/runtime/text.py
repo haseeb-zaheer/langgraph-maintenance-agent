@@ -1,6 +1,5 @@
 """Text bounding helpers for logs and command excerpts."""
 
-
 TRUNCATION_MARKER = "\n[truncated]"
 
 
