@@ -8,7 +8,7 @@ maintenance run.
 The user starts the agent manually:
 
 ```bash
-langgraph-maintenance run --config config/repos.yaml --llm
+langgraph-maintenance run --config examples/repos.yaml --llm
 ```
 
 Or a user-level systemd timer starts it on schedule.

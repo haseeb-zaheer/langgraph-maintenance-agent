@@ -1,98 +1,114 @@
 # LangGraph Routine Maintenance Agent
 
-Public-safe portfolio implementation of a scheduled, report-only repository
-maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
+Report-only repository maintenance reviews powered by LangGraph, constrained
+local tools, and optional OpenRouter-backed agents. The default public demo runs
+without credentials against a committed synthetic fixture repository.
 
-Phases 10, 11, 13, and 14 are complete. The project includes a repo-scoped safe tool
-registry, OpenRouter chat-completions client, structured repo inspector and
-summary contracts, bounded configured command execution, polished redacted
-Markdown reports, fresh failure reports, parallel LangGraph fan-out/fan-in, and
-bounded staged source-code review tools for LLM-backed bug/refactor/test-gap
-suggestions. Optional Discord webhook delivery runs through local scripts and
-user-level systemd units.
+## Quickstart
 
-## Safety Model
-
-- This repository is intended to be public.
-- Do not commit real `.env` values, webhook URLs, API keys, private repo paths,
-  raw logs, generated private reports, or proprietary snippets.
-- The agent will only inspect repositories explicitly listed in its config.
-- Each repo inspector run is constrained to the repo currently being inspected.
-- LLM agents will call constrained Python tools; they will not receive
-  unrestricted shell or filesystem access.
-- Safe file tools skip symlinks, prune sensitive directories, and bound file
-  reads before data can reach the model or report.
-- Source review maps approved candidates, validates an LLM review plan, then
-  batch-reads only planned Python and JavaScript/TypeScript source files from
-  approved source roots. Generated artifacts such as `.next/`, source maps,
-  dependency folders, build output, and caches are excluded.
-- Safe commands are opt-in per repo, parsed with `shlex.split`, and executed
-  with `shell=False` from the configured repo root. They must also match a
-  narrow report-only diagnostic profile.
-- The agent is report-only and must not fix, format, upgrade, commit, reset,
-  clean, or delete files in target repositories.
-
-## Development
+Install `uv`, clone this repository, then run:
 
 ```bash
+uv sync
 uv run pytest
-uv run ruff check .
-uv run mypy src
-uv run langgraph-maintenance --help
-```
-
-Validate the public-safe example config:
-
-```bash
 uv run langgraph-maintenance validate-config examples/repos.yaml
-```
-
-Run the public-safe dry-run demo without credentials:
-
-```bash
 uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run
 ```
 
-Run with OpenRouter-backed tool-using repo inspectors:
+The demo config points to `examples/fixture-repo/`. Relative repo paths in a
+config file resolve from that config file's directory, so the example works from
+any fresh clone location.
+
+`--dry-run` performs checks and renders report content in memory, but does not
+write report files or send Discord messages.
+
+## Safety Model
+
+- The agent only inspects repositories explicitly listed in its config.
+- It is report-only: no fixes, formatting, upgrades, commits, resets, cleanup,
+  or deletes are performed in target repositories.
+- LLM agents call constrained Python tools; they do not receive unrestricted
+  shell or filesystem access.
+- Safe file tools skip symlinks, prune sensitive/generated paths, bound reads,
+  and redact output before content reaches model state or reports.
+- Safe commands are opt-in per repo, parsed with `shlex.split`, executed with
+  `shell=False`, and limited to narrow diagnostic profiles.
+- Discord delivery is disabled by default and uses webhook URLs from environment
+  variables only.
+
+## LLM Mode
+
+OpenRouter-backed inspection is optional. Set credentials locally, then run with
+`--llm`:
 
 ```bash
 export OPENROUTER_API_KEY="sk-or-placeholder"
 export LANGGRAPH_MAINTENANCE_LLM_MODEL="deepseek/deepseek-v4-flash"
-uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider openrouter --max-concurrency 4
+uv run langgraph-maintenance run \
+  --config examples/repos.yaml \
+  --llm \
+  --provider openrouter \
+  --max-concurrency 4
 ```
 
-LLM mode requires evidence before final structured findings are accepted.
-For source review, the deterministic workflow maps the source tree, exposes
-ranked candidates, validates a model-created review plan, batch-reads only
-planned files, and rejects findings that cite unread source files.
-Semantic source-code review requires LLM mode; `--no-llm` reports source review
-as skipped instead of inventing findings.
+In LLM mode, repository inspectors must gather evidence with registered tools
+before final structured findings are accepted. Semantic source-code review is
+available only in LLM mode; `--no-llm` reports those checks as skipped instead
+of inventing findings.
 
-`--dry-run` performs checks and renders report content in memory, but it does
-not write report files or send Discord messages.
+## Discord Delivery
 
-Reports are written to a date-based Markdown file and copied to
-`reports/latest.md` on successful non-dry runs. Fatal config/runtime failures
-write a fresh timestamped failure report and do not replace or send stale
-`latest.md`.
-
-Discord delivery is opt-in and disabled by default. Set a webhook in the
-environment, then enable it in config with `report.discord_enabled: true` or
-force a single run with `--send-discord`. Use `--no-discord` to suppress config
-delivery. Long reports are split into numbered webhook messages below
-Discord's 2,000-character `content` limit.
+Discord delivery is opt-in. Set a webhook in your environment, then enable it in
+config with `report.discord_enabled: true` or force one run with
+`--send-discord`.
 
 ```bash
 export LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL="<discord webhook url>"
-uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --send-discord --summary-only
+uv run langgraph-maintenance run \
+  --config examples/repos.yaml \
+  --no-llm \
+  --send-discord \
+  --summary-only
 uv run langgraph-maintenance send reports/latest.md --summary-only
 ```
 
+Use `--no-discord` to suppress config-based delivery. Long reports are split
+into numbered webhook messages below Discord's 2,000-character `content` limit.
+
+## Configure Repositories
+
+Create a YAML config with explicit repo entries:
+
+```yaml
+repos:
+  - name: example-python-service
+    path: ../example-python-service
+    enabled: true
+    required: false
+    checks:
+      - git-status
+      - docs
+      - static-search
+      - dependency-metadata
+    safe_commands: {}
+    source_roots:
+      - src
+      - tests
+    timeout_seconds: 300
+
+report:
+  output_dir: reports
+  filename_prefix: routine-maintenance
+  update_latest: true
+  discord_enabled: false
+```
+
+Use absolute paths or paths relative to the config file location. Do not commit
+private repo paths, tokens, webhook URLs, raw logs, or generated private reports.
+
 ## Safe Commands
 
-`safe_commands` are configured per repo and only run when a matching
-command-style check is enabled. A configured command label by itself is not
-enough to execute. The deterministic mapping is:
+`safe_commands` run only when the matching check is enabled:
 
 - `tests` check -> `safe_commands.tests`
 - `lint` check -> `safe_commands.lint`
@@ -104,19 +120,13 @@ Example:
 ```yaml
 repos:
   - name: example-python-service
-    path: /path/to/example-python-service
+    path: ../example-python-service
     enabled: true
     checks:
       - tests
     safe_commands:
       tests: python -m pytest --version
-    timeout_seconds: 300
 ```
-
-Commands are parsed into argv and run with `shell=False`, so shell features such
-as pipes, redirection, variable expansion, and compound commands are not
-supported in this batch. Stdout and stderr are bounded and redacted before they
-enter tool results, workflow state, or reports. Unknown labels do not execute.
 
 Allowed command profiles are intentionally narrow:
 
@@ -127,92 +137,74 @@ Allowed command profiles are intentionally narrow:
 
 Commands such as `python -c`, package-manager scripts, formatters, fix flags,
 git mutation commands, and ad hoc file writes are rejected during config
-validation. Command caches and temporary directories are redirected outside the
-target repo where supported. Reports include only command results produced by
-actual command tool calls.
+validation.
 
-## Agent Tools
+## Source Review Budgets
 
-Repo inspector agents can call only registered tools that accept `repo_name`.
-They cannot pass arbitrary filesystem roots or shell commands, and model tool
-calls for a different repo are rejected. Available tools include `git_status`,
-`latest_commit`, `list_files`, `read_safe_file`, `summarize_source_tree`,
-`list_source_files`, `read_source_file`, `read_source_files`, `search_static_markers`,
-`detect_dependency_manifests`, and `run_configured_safe_command`.
-
-## Source Review
-
-Enable LLM-backed source review with one or more source checks:
+Source review reads are bounded by config:
 
 ```yaml
-repos:
-  - name: example-python-service
-    path: /path/to/example-python-service
-    enabled: true
-    checks:
-      - source-review
-      - bug-risk-review
-      - refactor-review
-      - test-gap-review
-    source_roots:
-      - src
-      - tests
-    source_review_max_plan_files: 12
-    source_review_max_files: 20
-    source_review_max_bytes_per_file: 12000
-    source_review_max_total_bytes: 80000
+source_roots:
+  - src
+  - tests
+source_review_max_plan_files: 12
+source_review_max_files: 20
+source_review_max_bytes_per_file: 12000
+source_review_max_total_bytes: 80000
 ```
 
-The first source-review scope is Python plus Next.js/JavaScript/TypeScript.
-Candidate ranking prioritizes Next.js API routes, route handlers, auth,
-rate-limit, request/response, environment, network, filesystem, sitemap,
-robots, and runtime glue files. Reports include a `Source Review Coverage`
-section with candidate, planned, read, skipped, generated-skip, byte, mode, and
-plan-rationale metadata. The final source-review LLM call uses a strict
-source-only structured output schema and gets one repair retry if the model
-omits required evidence or cites an unread file. Repair can only use the
-already-read files and allowed metadata; it never expands source access.
-Reports cite concise evidence paths and suggested human actions, never raw
-source dumps. The agent still never edits target repositories.
+The workflow maps candidates, validates an LLM-created review plan, batch-reads
+only approved planned files, and rejects source findings that cite unread files.
 
-## Scheduled Runtime
+## Optional Linux Scheduling
 
-Manual wrapper run without Discord:
+The primary public path is the manual CLI above. Linux users can optionally
+install user-level systemd units:
+
+```bash
+scripts/install_systemd_user_units.sh
+```
+
+The helper writes units under `~/.config/systemd/user/` with the current clone
+path, reloads user systemd, and enables the timer. The timer runs daily at
+11:00 AM local system time.
+
+Manual wrapper scripts are also available:
 
 ```bash
 LANGGRAPH_MAINTENANCE_CONFIG=examples/repos.yaml scripts/run_maintenance_check.sh
-```
-
-Manual wrapper run with Discord delivery after a successful fresh report:
-
-```bash
 LANGGRAPH_MAINTENANCE_CONFIG=examples/repos.yaml scripts/run_and_send.sh
 ```
 
 The scripts load local `.env` if present, default to `--no-llm`, use
-`LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS=3600`, and use
-`LANGGRAPH_MAINTENANCE_MAX_CONCURRENCY=4`. Set
-`LANGGRAPH_MAINTENANCE_USE_LLM=1` to use OpenRouter-backed repo inspectors.
+`LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS=3600`, and avoid sending stale Discord
+reports after failures.
 
-Install the user-level systemd timer:
+macOS and Windows users can run the CLI manually or use their operating
+system's scheduler.
+
+## Development And Validation
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cp systemd/langgraph-maintenance-agent.service ~/.config/systemd/user/
-cp systemd/langgraph-maintenance-agent.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now langgraph-maintenance-agent.timer
-systemctl --user list-timers langgraph-maintenance-agent.timer
+uv sync
+uv run pytest
+uv run ruff check .
+uv run mypy src
+uv build
+uv run langgraph-maintenance --help
+bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh scripts/install_systemd_user_units.sh
 ```
 
-The timer runs daily at 11:00 AM local system time. Failed script runs write a
-fresh failure report and do not send stale `reports/latest.md`.
+Generated reports are ignored except for `reports/.gitkeep`. Fatal
+config/runtime failures write fresh timestamped failure reports and do not
+replace or send stale `reports/latest.md`.
 
 ## Source Of Truth
 
-`PRD.md` is the main implementation reference and checklist. Update it whenever
-scope, architecture, behavior, safety rules, or phase status changes.
+`PRD.md` is the main implementation reference and launch checklist. Update it
+whenever scope, architecture, behavior, safety rules, docs, packaging,
+scheduling, or validation status changes.
 
 ## License
 
-License selection is pending and must be finalized before public release.
+MIT. See `LICENSE`.
