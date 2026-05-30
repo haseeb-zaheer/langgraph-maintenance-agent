@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
 from langgraph_maintenance_agent.config import AppConfig, RepoConfig
 from langgraph_maintenance_agent.schemas import (
@@ -28,8 +29,11 @@ class AgentState(TypedDict, total=False):
     provider: str
     max_tool_calls: int
     max_agent_iterations: int
+    max_concurrency: int
     repos: list[RepoConfig]
     selected_repos: list[RepoConfig]
+    current_repo: RepoConfig
+    branch_results: Annotated[list[RepoResult], operator.add]
     repo_results: list[RepoResult]
     findings: list[Finding]
     skipped_checks: list[SkippedCheck]

@@ -9,6 +9,7 @@ from shutil import copyfile
 from typing import Any, cast
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import Send
 
 from langgraph_maintenance_agent.agents.prompts import (
     SUMMARY_SYSTEM_PROMPT,
@@ -74,6 +75,7 @@ def prepare_run_node(state: AgentState) -> AgentState:
         "started_at": now.isoformat(),
         "output_dir": str(output_dir),
         "repo_results": [],
+        "branch_results": [],
         "findings": [],
         "skipped_checks": [],
         "errors": [],
@@ -98,6 +100,14 @@ def build_tool_registry_node(state: AgentState) -> AgentState:
     return {**state, "tool_registry": build_default_tool_registry(context)}
 
 
+def _tool_registry_for_repo(state: AgentState, repo_name: str) -> ToolRegistry:
+    config = state["config"]
+    repo = next(repo for repo in config.repos if repo.name == repo_name)
+    branch_config = config.model_copy(update={"repos": [repo]})
+    context = ToolContext.from_config(branch_config)
+    return build_default_tool_registry(context)
+
+
 def _llm_client_for_state(state: AgentState) -> OpenRouterClient | None:
     if not state.get("use_llm", False):
         return None
@@ -107,41 +117,88 @@ def _llm_client_for_state(state: AgentState) -> OpenRouterClient | None:
     return OpenRouterClient()
 
 
-def inspect_repo_agent_node(state: AgentState) -> AgentState:
-    """Run the repo inspector sequentially for selected repos."""
+def dispatch_repo_inspections(state: AgentState) -> list[Send] | str:
+    """Fan out one isolated branch per selected repository."""
 
-    registry = cast(ToolRegistry, state["tool_registry"])
-    llm_client = _llm_client_for_state(state)
-    agent = RepoInspectorAgent(
-        tool_registry=registry,
-        llm_client=llm_client,
-        max_tool_calls=state.get("max_tool_calls", 12),
-        max_iterations=state.get("max_agent_iterations", 6),
-    )
-    results = [agent.inspect(repo) for repo in state.get("selected_repos", [])]
-    return {**state, "repo_results": results}
+    repos = state.get("selected_repos", [])
+    if not repos:
+        return "normalize_agent_output"
+    return [
+        Send(
+            "inspect_repo_branch",
+            {
+                **state,
+                "current_repo": repo,
+                "branch_results": [],
+            },
+        )
+        for repo in repos
+    ]
+
+
+def inspect_repo_branch_node(state: AgentState) -> AgentState:
+    """Run one repo inspector branch with a one-repo tool registry."""
+
+    repo = state["current_repo"]
+    try:
+        registry = _tool_registry_for_repo(state, repo.name)
+        llm_client = _llm_client_for_state(state)
+        agent = RepoInspectorAgent(
+            tool_registry=registry,
+            llm_client=llm_client,
+            max_tool_calls=state.get("max_tool_calls", 12),
+            max_iterations=state.get("max_agent_iterations", 6),
+        )
+        result = agent.inspect(repo)
+    except Exception as exc:
+        result = RepoResult(
+            repo_name=repo.name,
+            path=str(repo.path) if repo.path is not None else None,
+            errors=[
+                AgentError(
+                    message=f"repo inspection failed: {exc}",
+                    repo_name=repo.name,
+                    stage="inspect_repo_branch",
+                    recoverable=not repo.required,
+                )
+            ],
+        )
+    return {"branch_results": [result]}
 
 
 def normalize_agent_output_node(state: AgentState) -> AgentState:
     """Validate normalized result collections from repo outputs."""
 
-    normalized = [
-        RepoResult.model_validate(result) for result in state.get("repo_results", [])
-    ]
+    raw_results = state.get("branch_results") or state.get("repo_results", [])
+    normalized = [RepoResult.model_validate(result) for result in raw_results]
     return {**state, "repo_results": normalized}
 
 
 def merge_results_node(state: AgentState) -> AgentState:
     """Merge findings and skipped checks across repositories."""
 
+    ordered_results = _order_repo_results(
+        state.get("repo_results", []),
+        state.get("selected_repos", []),
+    )
+    _raise_for_required_repo_failures(
+        selected_repos=state.get("selected_repos", []),
+        repo_results=ordered_results,
+    )
     findings: list[Finding] = []
     skipped: list[SkippedCheck] = []
     errors: list[AgentError] = []
-    for result in state.get("repo_results", []):
+    for result in ordered_results:
         findings.extend(result.findings)
         skipped.extend(result.skipped_checks)
         errors.extend(result.errors)
-    return {**state, "findings": findings, "skipped_checks": skipped, "errors": errors}
+    return {
+        **state,
+        "repo_results": ordered_results,
+        "findings": findings,
+        "skipped_checks": skipped,
+        "errors": errors,
+    }
 
 
 def redact_structured_state_node(state: AgentState) -> AgentState:
@@ -369,14 +426,13 @@ def send_discord_summary_node(state: AgentState) -> AgentState:
 
 
 def build_graph() -> Any:
-    """Build the sequential Batch 2 LangGraph workflow."""
+    """Build the fan-out/fan-in LangGraph workflow."""
 
     graph = StateGraph(AgentState)
     graph.add_node("load_config", load_config_node)
     graph.add_node("prepare_run", prepare_run_node)
     graph.add_node("select_repos", select_repos_node)
-    graph.add_node("build_tool_registry", build_tool_registry_node)
-    graph.add_node("inspect_repo_agent", inspect_repo_agent_node)
+    graph.add_node("inspect_repo_branch", inspect_repo_branch_node)
     graph.add_node("normalize_agent_output", normalize_agent_output_node)
     graph.add_node("merge_results", merge_results_node)
     graph.add_node("redact_structured_state", redact_structured_state_node)
@@ -388,9 +444,8 @@ def build_graph() -> Any:
     graph.set_entry_point("load_config")
     graph.add_edge("load_config", "prepare_run")
     graph.add_edge("prepare_run", "select_repos")
-    graph.add_edge("select_repos", "build_tool_registry")
-    graph.add_edge("build_tool_registry", "inspect_repo_agent")
-    graph.add_edge("inspect_repo_agent", "normalize_agent_output")
+    graph.add_conditional_edges("select_repos", dispatch_repo_inspections)
+    graph.add_edge("inspect_repo_branch", "normalize_agent_output")
     graph.add_edge("normalize_agent_output", "merge_results")
     graph.add_edge("merge_results", "redact_structured_state")
     graph.add_edge("redact_structured_state", "summarize_with_agent")
@@ -411,10 +466,11 @@ def run_workflow(
     provider: str = "openrouter",
     max_tool_calls: int = 12,
     max_agent_iterations: int = 6,
+    max_concurrency: int = 4,
     send_discord: bool | None = None,
     summary_only: bool = False,
 ) -> AgentState:
-    """Run the sequential workflow and return final state."""
+    """Run the workflow and return final state."""
 
     graph = build_graph()
     initial: AgentState = {
@@ -425,11 +481,17 @@ def run_workflow(
         "provider": provider,
         "max_tool_calls": max_tool_calls,
         "max_agent_iterations": max_agent_iterations,
+        "max_concurrency": max_concurrency,
         "send_discord": send_discord,
         "summary_only": summary_only,
     }
     try:
-        return cast(AgentState, graph.invoke(initial))
+        if use_llm:
+            _llm_client_for_state(initial)
+        return cast(
+            AgentState,
+            graph.invoke(initial, config={"max_concurrency": max_concurrency}),
+        )
     except Exception as exc:
         _write_failure_report(
             config_path=config_path,
@@ -452,7 +514,13 @@ def _write_failure_report(
     if dry_run:
         return
     now = datetime.now(UTC)
-    target_dir = ensure_output_dir(output_dir or Path("reports"))
+    resolved_output_dir = output_dir
+    if resolved_output_dir is None:
+        try:
+            resolved_output_dir = load_config(config_path).report.output_dir
+        except Exception:
+            resolved_output_dir = Path("reports")
+    target_dir = ensure_output_dir(resolved_output_dir)
     report_path = target_dir / timestamped_report_filename(now, "failure")
     redacted = redact_text(
         render_failure_report(
@@ -474,6 +542,54 @@ def _merge_counts(
     for key, value in right.items():
         merged[key] = merged.get(key, 0) + value
     return merged
+
+
+def _order_repo_results(
+    repo_results: list[RepoResult],
+    selected_repos: list[Any],
+) -> list[RepoResult]:
+    """Return branch results in config order, then any unexpected extras by name."""
+
+    order = {repo.name: index for index, repo in enumerate(selected_repos)}
+    return sorted(
+        repo_results,
+        key=lambda result: (order.get(result.repo_name, len(order)), result.repo_name),
+    )
+
+
+def _raise_for_required_repo_failures(
+    *,
+    selected_repos: list[Any],
+    repo_results: list[RepoResult],
+) -> None:
+    """Fail the run after fan-in if any required repo did not inspect cleanly."""
+
+    results_by_name = {result.repo_name: result for result in repo_results}
+    failures: list[str] = []
+    for repo in selected_repos:
+        if not repo.required:
+            continue
+        result = results_by_name.get(repo.name)
+        if result is None:
+            failures.append(f"{repo.name}: inspection produced no result")
+            continue
+        if result.errors:
+            messages = "; ".join(error.message for error in result.errors)
+            failures.append(f"{repo.name}: {messages}")
+            continue
+        failed_tools = [
+            finding.title
+            for finding in result.findings
+            if finding.category.value == "runtime"
+            and "did not complete" in finding.title.lower()
+        ]
+        if failed_tools:
+            failures.append(
+                f"{repo.name}: required inspection tools failed: "
+                + ", ".join(failed_tools)
+            )
+    if failures:
+        raise RuntimeError("required repo inspection failed: " + " | ".join(failures))
 
 
 def _redact_json_compatible(value: Any) -> tuple[Any, int, dict[str, int]]:

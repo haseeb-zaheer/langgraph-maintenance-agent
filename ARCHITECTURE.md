@@ -28,9 +28,10 @@ systemd timer / manual CLI
 
 ## Current Implementation
 
-The current implementation includes the first tool-using agent workflow,
-bounded configured command execution, polished reporting, redaction metadata,
-fresh failure reports, and optional Discord delivery:
+The current implementation includes the tool-using agent workflow, parallel
+LangGraph repo fan-out/fan-in, bounded configured command execution, polished
+reporting, redaction metadata, fresh failure reports, local runtime scripts,
+user-level systemd units, and optional Discord delivery:
 
 - `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
   schemas.
@@ -56,18 +57,35 @@ fresh failure reports, and optional Discord delivery:
   Discord webhooks loaded only from environment variables. Long messages are
   split below Discord's 2,000-character `content` limit and prefixed with
   chunk numbers.
-- `graph.py` assembles the sequential supervisor workflow:
-  `load_config -> prepare_run -> select_repos -> build_tool_registry ->
-  inspect_repo_agent -> normalize_agent_output -> merge_results ->
+- `graph.py` assembles the supervisor workflow:
+  `load_config -> prepare_run -> select_repos -> inspect_repo_branch fan-out ->
+  normalize_agent_output -> merge_results ->
   redact_structured_state -> summarize_with_agent -> render_markdown ->
   redact_report -> write_report -> send_discord_summary`.
+- LangGraph `Send` starts one `inspect_repo_branch` per enabled repo. Each
+  branch builds a one-repo `ToolRegistry`, so tool schemas expose only that
+  repo name and tool access remains isolated. Branch outputs are aggregated and
+  fan-in sorts results by config order before reporting.
+- `--max-concurrency` and `run_workflow(max_concurrency=...)` pass LangGraph
+  runtime concurrency limits. The default is `4`.
+- Non-required repo branch exceptions become repo-scoped recoverable errors.
+  Required repo failures are detected after fan-in and fail the run before
+  report write/delivery, causing a fresh failure report instead of stale
+  `latest.md`.
 - Fatal workflow failures write a fresh timestamped failure report and do not
   update `reports/latest.md`.
+- `scripts/run_maintenance_check.sh` runs a local check without Discord.
+  `scripts/run_and_send.sh` sends only after a successful fresh run. Both load
+  `.env` without printing values, default to no-LLM mode, enforce
+  `LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS`, and write script-level failure
+  reports on timeout or wrapper failure.
+- `systemd/langgraph-maintenance-agent.timer` runs the service daily at
+  11:00 AM local system time.
 
 ## Remaining Boundary
 
-Later batches still own parallel fan-out, wrapper scripts, optional temp/cache
-isolation for commands that need writable caches, and the systemd timer.
+Later batches still own broader documentation polish, optional temp/cache
+isolation for commands that need writable caches, and public release prep.
 
 ## Agent Safety Boundary
 

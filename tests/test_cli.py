@@ -108,12 +108,15 @@ def test_run_forced_discord_passes_override(monkeypatch, tmp_path: Path) -> None
                 "--no-llm",
                 "--send-discord",
                 "--summary-only",
+                "--max-concurrency",
+                "2",
             ]
         )
         == 0
     )
     assert captured["send_discord"] is True
     assert captured["summary_only"] is True
+    assert captured["max_concurrency"] == 2
 
 
 def test_run_no_discord_passes_override(monkeypatch, tmp_path: Path) -> None:

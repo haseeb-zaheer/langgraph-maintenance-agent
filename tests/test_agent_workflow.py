@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from langgraph_maintenance_agent.agents.repo_inspector import RepoInspectorAgent
 from langgraph_maintenance_agent.config import AppConfig, CheckName, RepoConfig
 from langgraph_maintenance_agent.graph import (
@@ -433,6 +435,41 @@ report:
         "repo-a",
         "repo-b",
     ]
+    assert all(result.metadata.tool_calls_made for result in state["repo_results"])
+
+
+def test_parallel_fan_in_keeps_config_order(tmp_path: Path) -> None:
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: repo-b
+    path: {repo_b}
+    enabled: true
+  - name: repo-a
+    path: {repo_a}
+    enabled: true
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(
+        config_path=config,
+        dry_run=True,
+        use_llm=False,
+        max_concurrency=2,
+    )
+
+    assert [result.repo_name for result in state["repo_results"]] == [
+        "repo-b",
+        "repo-a",
+    ]
 
 
 def test_no_llm_workflow_includes_configured_command_results(
@@ -552,6 +589,38 @@ report:
         "does not exist" in finding.description
         for finding in missing_result.findings
     )
+
+
+def test_required_repo_failure_writes_fresh_failure_report(tmp_path: Path) -> None:
+    existing_repo = tmp_path / "existing"
+    existing_repo.mkdir()
+    output_dir = tmp_path / "reports"
+    output_dir.mkdir()
+    latest = output_dir / "latest.md"
+    latest.write_text("old report", encoding="utf-8")
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: missing
+    path: {tmp_path / "missing"}
+    enabled: true
+    required: true
+  - name: existing
+    path: {existing_repo}
+    enabled: true
+report:
+  output_dir: {output_dir}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="required repo inspection failed"):
+        run_workflow(config_path=config, dry_run=False, use_llm=False)
+
+    assert latest.read_text(encoding="utf-8") == "old report"
+    failure_reports = list(output_dir.glob("*-failure.md"))
+    assert failure_reports
 
 
 def test_no_llm_workflow_writes_report_and_latest(tmp_path: Path) -> None:

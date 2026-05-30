@@ -29,6 +29,13 @@ In LLM mode, configured checks define required evidence tools. The repo
 inspector asks OpenRouter for required tool use until those tools complete, and
 does not accept final structured findings before evidence exists.
 
+In the parallel workflow, each repo branch receives a separate registry built
+from a one-repo config. OpenRouter tool schemas therefore enumerate only the
+current repo name for `repo_name`. Reports include concise tool-call metadata in
+the appendix, limited to tool name, status, argument names, counts, and error
+codes. Raw tool results and full argument payloads are not rendered as tool
+history.
+
 ## Configured Command Tool
 
 `run_configured_safe_command` is the only command-execution surface. It does not

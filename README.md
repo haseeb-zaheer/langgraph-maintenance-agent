@@ -3,11 +3,12 @@
 Public-safe portfolio implementation of a scheduled, report-only repository
 maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
-Phases 8 and 9 are complete. The project includes a repo-scoped safe tool
+Phases 10 and 11 are complete. The project includes a repo-scoped safe tool
 registry, OpenRouter chat-completions client, structured repo inspector and
 summary contracts, bounded configured command execution, polished redacted
-Markdown reports, fresh failure reports, and optional Discord webhook delivery.
-Later batches will add parallel fan-out and systemd scheduling.
+Markdown reports, fresh failure reports, parallel LangGraph fan-out/fan-in, and
+optional Discord webhook delivery through local scripts and user-level systemd
+units.
 
 ## Safety Model
 
@@ -52,7 +53,7 @@ Run with OpenRouter-backed tool-using repo inspectors:
 ```bash
 export OPENROUTER_API_KEY="sk-or-placeholder"
 export LANGGRAPH_MAINTENANCE_LLM_MODEL="deepseek/deepseek-v4-flash"
-uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider openrouter
+uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider openrouter --max-concurrency 4
 ```
 
 LLM mode requires evidence tool calls before final structured findings are
@@ -129,6 +130,39 @@ They cannot pass arbitrary filesystem roots or shell commands, and model tool
 calls for a different repo are rejected. Available tools include `git_status`,
 `latest_commit`, `list_files`, `read_safe_file`, `search_static_markers`,
 `detect_dependency_manifests`, and `run_configured_safe_command`.
+
+## Scheduled Runtime
+
+Manual wrapper run without Discord:
+
+```bash
+LANGGRAPH_MAINTENANCE_CONFIG=examples/repos.yaml scripts/run_maintenance_check.sh
+```
+
+Manual wrapper run with Discord delivery after a successful fresh report:
+
+```bash
+LANGGRAPH_MAINTENANCE_CONFIG=examples/repos.yaml scripts/run_and_send.sh
+```
+
+The scripts load local `.env` if present, default to `--no-llm`, use
+`LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS=3600`, and use
+`LANGGRAPH_MAINTENANCE_MAX_CONCURRENCY=4`. Set
+`LANGGRAPH_MAINTENANCE_USE_LLM=1` to use OpenRouter-backed repo inspectors.
+
+Install the user-level systemd timer:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/langgraph-maintenance-agent.service ~/.config/systemd/user/
+cp systemd/langgraph-maintenance-agent.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now langgraph-maintenance-agent.timer
+systemctl --user list-timers langgraph-maintenance-agent.timer
+```
+
+The timer runs daily at 11:00 AM local system time. Failed script runs write a
+fresh failure report and do not send stale `reports/latest.md`.
 
 ## Source Of Truth
 

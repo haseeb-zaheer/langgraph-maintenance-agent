@@ -6,10 +6,12 @@ from langgraph_maintenance_agent.schemas import (
     DeliveryStatus,
     Finding,
     FindingCategory,
+    RepoInspectionMetadata,
     RepoResult,
     Severity,
     SkippedCheck,
     SummaryOutput,
+    ToolCallSummary,
 )
 
 
@@ -83,6 +85,27 @@ def test_repo_result_groups_structured_data() -> None:
     assert result.findings == [finding]
     assert result.skipped_checks == [skipped]
     assert result.errors == [error]
+
+
+def test_repo_result_metadata_serialization() -> None:
+    metadata = RepoInspectionMetadata(
+        tool_calls=[
+            ToolCallSummary(
+                tool_name="git_status",
+                status="completed",
+                argument_keys=["repo_name"],
+            )
+        ],
+        tool_calls_made=1,
+        iterations=1,
+        model_provider="none",
+    )
+    result = RepoResult(repo_name="example", metadata=metadata)
+
+    restored = RepoResult.model_validate(result.model_dump(mode="json"))
+
+    assert restored.metadata.tool_calls_made == 1
+    assert restored.metadata.tool_calls[0].tool_name == "git_status"
 
 
 def test_delivery_status_serialization() -> None:

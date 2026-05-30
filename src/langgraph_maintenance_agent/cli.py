@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--max-tool-calls", type=int, default=12)
     run.add_argument("--max-agent-iterations", type=int, default=6)
+    run.add_argument("--max-concurrency", type=int, default=4)
     delivery = run.add_mutually_exclusive_group()
     delivery.add_argument("--send-discord", action="store_true")
     delivery.add_argument("--no-discord", action="store_true")
@@ -98,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
                 provider=args.provider,
                 max_tool_calls=args.max_tool_calls,
                 max_agent_iterations=args.max_agent_iterations,
+                max_concurrency=args.max_concurrency,
                 send_discord=send_discord,
                 summary_only=args.summary_only,
             )

@@ -24,10 +24,12 @@ from langgraph_maintenance_agent.schemas import (
     Finding,
     FindingCategory,
     IncompleteAgentRun,
+    RepoInspectionMetadata,
     RepoInspectorOutput,
     RepoResult,
     Severity,
     SkippedCheck,
+    ToolCallSummary,
 )
 from langgraph_maintenance_agent.tools.registry import ToolRegistry
 from langgraph_maintenance_agent.tools.results import ToolCallRecord, ToolResult
@@ -51,7 +53,10 @@ CHECK_EVIDENCE_TOOLS: dict[CheckName, set[str]] = {
 }
 
 
-def incomplete_to_repo_result(incomplete: IncompleteAgentRun) -> RepoResult:
+def incomplete_to_repo_result(
+    incomplete: IncompleteAgentRun,
+    metadata: RepoInspectionMetadata | None = None,
+) -> RepoResult:
     """Convert an incomplete agent run to a repo result with a recoverable error."""
 
     return RepoResult(
@@ -64,6 +69,25 @@ def incomplete_to_repo_result(incomplete: IncompleteAgentRun) -> RepoResult:
                 recoverable=True,
             )
         ],
+        metadata=metadata
+        or RepoInspectionMetadata(
+            tool_calls_made=incomplete.tool_calls_made,
+            iterations=incomplete.iterations,
+        ),
+    )
+
+
+def summarize_tool_call(record: ToolCallRecord) -> ToolCallSummary:
+    """Return public-safe metadata for one bounded tool call."""
+
+    error_code = None
+    if record.result is not None and record.result.error is not None:
+        error_code = record.result.error.code
+    return ToolCallSummary(
+        tool_name=record.tool_name,
+        status=record.status,
+        argument_keys=sorted(record.arguments),
+        error_code=error_code or record.error,
     )
 
 
@@ -214,6 +238,12 @@ class RepoInspectorAgent:
             findings=findings,
             skipped_checks=skipped,
             command_results=command_results,
+            metadata=RepoInspectionMetadata(
+                tool_calls=[summarize_tool_call(record) for record in tool_calls],
+                tool_calls_made=len(tool_calls),
+                iterations=1,
+                model_provider="none",
+            ),
         )
 
     def inspect_with_llm(self, repo: RepoConfig) -> RepoResult:
@@ -236,6 +266,7 @@ class RepoInspectorAgent:
         ]
         executed_command_results: list[CommandResult] = []
         completed_evidence_tools: set[str] = set()
+        tool_call_records: list[ToolCallRecord] = []
         tool_calls_made = 0
         for iteration in range(1, self.max_iterations + 1):
             missing_tools = missing_required_evidence_tools(
@@ -256,7 +287,16 @@ class RepoInspectorAgent:
                         stage="model_call",
                         tool_calls_made=tool_calls_made,
                         iterations=iteration,
-                    )
+                    ),
+                    metadata=RepoInspectionMetadata(
+                        tool_calls=[
+                            summarize_tool_call(record)
+                            for record in tool_call_records
+                        ],
+                        tool_calls_made=tool_calls_made,
+                        iterations=iteration,
+                        model_provider="openrouter",
+                    ),
                 )
             if response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -269,7 +309,16 @@ class RepoInspectorAgent:
                                 stage="tool_loop",
                                 tool_calls_made=tool_calls_made - 1,
                                 iterations=iteration,
-                            )
+                            ),
+                            metadata=RepoInspectionMetadata(
+                                tool_calls=[
+                                    summarize_tool_call(record)
+                                    for record in tool_call_records
+                                ],
+                                tool_calls_made=tool_calls_made - 1,
+                                iterations=iteration,
+                                model_provider="openrouter",
+                            ),
                         )
                     if tool_call.name not in self.tool_registry.names():
                         return incomplete_to_repo_result(
@@ -282,7 +331,16 @@ class RepoInspectorAgent:
                                 stage="tool_dispatch",
                                 tool_calls_made=tool_calls_made,
                                 iterations=iteration,
-                            )
+                            ),
+                            metadata=RepoInspectionMetadata(
+                                tool_calls=[
+                                    summarize_tool_call(record)
+                                    for record in tool_call_records
+                                ],
+                                tool_calls_made=tool_calls_made,
+                                iterations=iteration,
+                                model_provider="openrouter",
+                            ),
                         )
                     requested_repo = tool_call.arguments.get("repo_name")
                     if requested_repo != repo.name:
@@ -296,7 +354,16 @@ class RepoInspectorAgent:
                                 stage="tool_dispatch",
                                 tool_calls_made=tool_calls_made,
                                 iterations=iteration,
-                            )
+                            ),
+                            metadata=RepoInspectionMetadata(
+                                tool_calls=[
+                                    summarize_tool_call(record)
+                                    for record in tool_call_records
+                                ],
+                                tool_calls_made=tool_calls_made,
+                                iterations=iteration,
+                                model_provider="openrouter",
+                            ),
                         )
                     try:
                         result = self.tool_registry.call(
@@ -310,8 +377,26 @@ class RepoInspectorAgent:
                                 stage="tool_dispatch",
                                 tool_calls_made=tool_calls_made,
                                 iterations=iteration,
-                            )
+                            ),
+                            metadata=RepoInspectionMetadata(
+                                tool_calls=[
+                                    summarize_tool_call(record)
+                                    for record in tool_call_records
+                                ],
+                                tool_calls_made=tool_calls_made,
+                                iterations=iteration,
+                                model_provider="openrouter",
+                            ),
                         )
+                    tool_call_records.append(
+                        ToolCallRecord(
+                            tool_name=tool_call.name,
+                            repo_name=repo.name,
+                            arguments=tool_call.arguments,
+                            status="completed" if result.ok else "failed",
+                            result=result,
+                        )
+                    )
                     if (
                         tool_call.name == "run_configured_safe_command"
                         and result.ok
@@ -344,7 +429,16 @@ class RepoInspectorAgent:
                             stage="structured_output",
                             tool_calls_made=tool_calls_made,
                             iterations=iteration,
-                        )
+                        ),
+                        metadata=RepoInspectionMetadata(
+                            tool_calls=[
+                                summarize_tool_call(record)
+                                for record in tool_call_records
+                            ],
+                            tool_calls_made=tool_calls_made,
+                            iterations=iteration,
+                            model_provider="openrouter",
+                        ),
                     )
                 mismatch = validate_repo_output_matches(repo, output)
                 if mismatch is not None:
@@ -355,7 +449,16 @@ class RepoInspectorAgent:
                             stage="structured_output",
                             tool_calls_made=tool_calls_made,
                             iterations=iteration,
-                        )
+                        ),
+                        metadata=RepoInspectionMetadata(
+                            tool_calls=[
+                                summarize_tool_call(record)
+                                for record in tool_call_records
+                            ],
+                            tool_calls_made=tool_calls_made,
+                            iterations=iteration,
+                            model_provider="openrouter",
+                        ),
                     )
                 if missing_tools:
                     messages.append(
@@ -387,6 +490,14 @@ class RepoInspectorAgent:
                     skipped_checks=output.skipped_checks,
                     command_results=executed_command_results,
                     errors=output.errors,
+                    metadata=RepoInspectionMetadata(
+                        tool_calls=[
+                            summarize_tool_call(record) for record in tool_call_records
+                        ],
+                        tool_calls_made=tool_calls_made,
+                        iterations=iteration,
+                        model_provider="openrouter",
+                    ),
                 )
             messages.append(
                 {
@@ -409,7 +520,15 @@ class RepoInspectorAgent:
                 stage="tool_loop",
                 tool_calls_made=tool_calls_made,
                 iterations=self.max_iterations,
-            )
+            ),
+            metadata=RepoInspectionMetadata(
+                tool_calls=[
+                    summarize_tool_call(record) for record in tool_call_records
+                ],
+                tool_calls_made=tool_calls_made,
+                iterations=self.max_iterations,
+                model_provider="openrouter",
+            ),
         )
 
 

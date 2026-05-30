@@ -335,8 +335,22 @@ def _render_appendix(
                 f"- Path: `{result.path or 'unknown'}`",
                 f"- Findings: {counts or 'none'}",
                 f"- Commands: {len(result.command_results)}",
+                f"- Tool calls: {result.metadata.tool_calls_made}",
+                f"- Agent iterations: {result.metadata.iterations}",
             ]
         )
+        if result.metadata.model_provider:
+            lines.append(f"- Model provider: `{result.metadata.model_provider}`")
+        if result.metadata.model_name:
+            lines.append(f"- Model: `{result.metadata.model_name}`")
+        for tool_call in result.metadata.tool_calls[:12]:
+            detail = (
+                f"- Tool `{tool_call.tool_name}`: {tool_call.status}"
+                f" (arguments: {', '.join(tool_call.argument_keys) or 'none'}"
+            )
+            if tool_call.error_code:
+                detail += f"; error: `{tool_call.error_code}`"
+            lines.append(detail + ")")
         for skipped in skipped_by_repo.get(result.repo_name, []):
             lines.append(f"- Skipped `{skipped.check_name}`: {skipped.reason}")
         for error in errors_by_repo.get(result.repo_name, []):

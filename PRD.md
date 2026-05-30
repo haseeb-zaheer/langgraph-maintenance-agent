@@ -7,11 +7,13 @@ report-only maintenance reviews over an explicit allowlist of local
 repositories.
 
 The agent should inspect repository health, dependency metadata, configured
-lint/test/build commands, documentation drift, dirty worktrees, and suspicious
-maintenance risks. It should be genuinely agentic: OpenRouter-backed LLM agents
-should reason over each configured repository by calling constrained,
-public-safe tools. It must never modify target repositories. It should write a
-local Markdown report and send a redacted summary to Discord.
+lint/test/build commands, documentation drift, dirty worktrees, suspicious
+maintenance risks, and bounded source-code evidence for likely bugs,
+maintainability issues, and refactor opportunities. It should be genuinely
+agentic: OpenRouter-backed LLM agents should reason over each configured
+repository by calling constrained, public-safe tools. It must never modify
+target repositories. It should write a local Markdown report and send a
+redacted summary to Discord.
 
 This project is a production-style rebuild of a Codex CLI prototype, but it
 should stand on its own as a conventional Python/LangGraph repository suitable
@@ -47,6 +49,8 @@ for public review.
 - As a developer, I can run the agent manually from the CLI before enabling the
   scheduler.
 - As a developer, I can see which checks ran, which checks were skipped, and why.
+- As a developer, I can receive report-only suggestions for likely bugs,
+  code-quality improvements, and refactors based on bounded source-code reads.
 - As a developer, I can trust that dirty worktrees and local secrets are
   preserved.
 - As a portfolio reviewer, I can understand the architecture, safety model, and
@@ -95,6 +99,9 @@ systemd timer / manual CLI
             -> latest_commit
             -> list_files
             -> read_safe_file
+            -> list_source_files
+            -> read_source_file
+            -> summarize_source_tree
             -> search_static_markers
             -> detect_dependency_manifests
             -> run_configured_safe_command
@@ -178,6 +185,15 @@ Required tools:
 - `read_safe_file(repo_name, relative_path)`: read only approved documentation
   and manifest files; reject `.env`, logs, private keys, databases, raw reports,
   and other sensitive paths.
+- `list_source_files(repo_name, patterns=None)`: list bounded source-code files
+  from approved source directories while excluding generated output,
+  dependencies, caches, secrets, binary files, and oversized files.
+- `read_source_file(repo_name, relative_path)`: read bounded source-code files
+  for review; reject sensitive, generated, dependency, binary, oversized, and
+  out-of-repo paths.
+- `summarize_source_tree(repo_name)`: return public-safe source tree metadata
+  such as languages, framework signals, high-level directories, and candidate
+  files for review without dumping full contents.
 - `search_static_markers(repo_name)`: search TODO/FIXME/HACK and return bounded
   public-safe path/line summaries.
 - `detect_dependency_manifests(repo_name)`: identify Python, Node, Docker, dbt,
@@ -209,6 +225,9 @@ Use OpenRouter-backed LLM agents for:
 - Deciding which safe tools to call for a configured repo.
 - Interpreting safe tool outputs.
 - Producing structured repository findings.
+- Producing code-review findings for likely bugs, refactors, duplication,
+  maintainability risks, error-handling gaps, type-safety issues, and test gaps
+  from bounded source-code evidence.
 - Writing executive summaries and suggested next actions.
 - Explaining ambiguous risks from already redacted evidence.
 
@@ -327,7 +346,7 @@ The safety boundary must be enforced in code, not only prompts:
 ### Core Dependencies
 
 - [x] Add LangGraph.
-- [ ] Add OpenRouter-compatible model client support for agent calls.
+- [x] Add OpenRouter-compatible model client support for agent calls.
 - [ ] Add LangChain/OpenAI integration only if it is the chosen adapter for
       OpenRouter-compatible tool calling.
 - [x] Add Pydantic for config and report schemas.
@@ -402,11 +421,11 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Graph Routing
 
-- [ ] Fan out enabled repositories for parallel agent inspection when supported.
-- [ ] Continue if one repository fails, unless config marks it required.
-- [ ] Route command timeouts to skipped/incomplete check records.
-- [ ] Route agent iteration/tool-call limits to incomplete check records.
-- [ ] Route malformed structured agent output to validation errors and
+- [x] Fan out enabled repositories for parallel agent inspection when supported.
+- [x] Continue if one repository fails, unless config marks it required.
+- [x] Route command timeouts to skipped/incomplete check records.
+- [x] Route agent iteration/tool-call limits to incomplete check records.
+- [x] Route malformed structured agent output to validation errors and
       deterministic fallback where possible.
 - [x] Route redaction hits to a warning section without exposing values.
 - [x] Route fatal configuration errors to a local failure report.
@@ -414,48 +433,64 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Agent Tools And Command Execution
 
-- [ ] Implement a repo-scoped tool registry.
-- [ ] Implement `git_status(repo_name)`.
-- [ ] Implement `latest_commit(repo_name)`.
-- [ ] Implement `list_files(repo_name, patterns=None)`.
-- [ ] Implement `read_safe_file(repo_name, relative_path)`.
-- [ ] Implement `search_static_markers(repo_name)`.
-- [ ] Implement `detect_dependency_manifests(repo_name)`.
-- [ ] Implement `run_configured_safe_command(repo_name, command_label)`.
-- [ ] Ensure tools accept repo names, not arbitrary filesystem roots.
-- [ ] Ensure `read_safe_file` rejects `.env`, logs, databases, private keys, raw
+- [x] Implement a repo-scoped tool registry.
+- [x] Implement `git_status(repo_name)`.
+- [x] Implement `latest_commit(repo_name)`.
+- [x] Implement `list_files(repo_name, patterns=None)`.
+- [x] Implement `read_safe_file(repo_name, relative_path)`.
+- [ ] Implement `list_source_files(repo_name, patterns=None)`.
+- [ ] Implement `read_source_file(repo_name, relative_path)`.
+- [ ] Implement `summarize_source_tree(repo_name)`.
+- [x] Implement `search_static_markers(repo_name)`.
+- [x] Implement `detect_dependency_manifests(repo_name)`.
+- [x] Implement `run_configured_safe_command(repo_name, command_label)`.
+- [x] Ensure tools accept repo names, not arbitrary filesystem roots.
+- [x] Ensure `read_safe_file` rejects `.env`, logs, databases, private keys, raw
       reports, binary files, and paths outside the repo.
-- [ ] Ensure tool outputs are bounded and redacted before model/state use.
-- [ ] Implement a command runner wrapper for configured safe commands.
-- [ ] Enforce working directory per target repo.
-- [ ] Enforce timeout per command.
-- [ ] Capture exit status.
-- [ ] Capture bounded stdout/stderr excerpts.
-- [ ] Redact command output before storing it in findings.
-- [ ] Avoid shell invocation unless necessary.
+- [x] Ensure tool outputs are bounded and redacted before model/state use.
+- [x] Implement a command runner wrapper for configured safe commands.
+- [x] Enforce working directory per target repo.
+- [x] Enforce timeout per command.
+- [x] Capture exit status.
+- [x] Capture bounded stdout/stderr excerpts.
+- [x] Redact command output before storing it in findings.
+- [x] Avoid shell invocation unless necessary.
 - [ ] Support shell commands only when explicitly configured.
-- [ ] Mark commands as skipped if not configured.
-- [ ] Avoid reading `.env`, raw logs, credential files, private key files, and
+- [x] Mark commands as skipped if not configured.
+- [x] Avoid reading `.env`, raw logs, credential files, private key files, and
       other sensitive files.
-- [ ] Add tests for sensitive path rejection.
-- [ ] Add tests proving agents cannot call unregistered tools.
-- [ ] Add tests for unsafe command rejection.
+- [ ] Ensure source-code tools reject generated directories such as `.next/`,
+      `dist/`, `build/`, coverage output, dependency directories, caches, and
+      vendored artifacts by default.
+- [ ] Ensure source-code tools use per-file and per-run token/byte budgets.
+- [ ] Ensure source-code findings cite specific bounded evidence paths/line
+      ranges without dumping large private snippets.
+- [x] Add tests for sensitive path rejection.
+- [x] Add tests proving agents cannot call unregistered tools.
+- [x] Add tests for unsafe command rejection.
 
 ### Repository Tool Capabilities
 
-- [ ] Check path existence.
-- [ ] Check whether path is a git repository.
-- [ ] Record branch.
-- [ ] Record concise dirty state.
-- [ ] Record ahead/behind state when available.
-- [ ] Record latest commit hash/date/subject.
-- [ ] Detect untracked files without printing sensitive contents.
+- [x] Check path existence.
+- [x] Check whether path is a git repository.
+- [x] Record branch.
+- [x] Record concise dirty state.
+- [x] Record ahead/behind state when available.
+- [x] Record latest commit hash/date/subject.
+- [x] Detect untracked files without printing sensitive contents.
 - [ ] Detect docs presence.
-- [ ] Detect dependency manifests and lockfiles.
-- [ ] Detect test/lint/build command availability only through config.
-- [ ] Search TODO/FIXME/HACK markers.
+- [x] Detect dependency manifests and lockfiles.
+- [x] Detect test/lint/build command availability only through config.
+- [x] Search TODO/FIXME/HACK markers.
+- [ ] Read bounded source-code files for semantic inspection.
+- [ ] Detect generated/source-map artifacts and exclude them from static marker
+      and code review scans.
+- [ ] Detect likely bug risks from source evidence.
+- [ ] Detect refactor and maintainability opportunities from source evidence.
+- [ ] Detect duplicated or overly complex source hotspots when practical.
+- [ ] Detect missing or weak tests around risky source areas when practical.
 - [ ] Search suspicious committed artifacts by filename pattern.
-- [ ] Record skipped checks and reasons.
+- [x] Record skipped checks and reasons.
 
 ### Agent And LLM Usage
 
@@ -469,7 +504,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Require structured output from repo inspector agents.
 - [x] Require structured output from summary agent.
 - [x] Add prompt templates under `src/.../prompts/` or `prompts/`.
-- [ ] Keep prompts public-safe and free of private examples.
+- [x] Keep prompts public-safe and free of private examples.
 - [ ] Add tests or golden fixtures for prompt inputs/outputs where practical.
 - [x] Support a no-LLM deterministic fallback mode for tests and public demos.
 - [x] Add mocked model tests for tool-call and structured-output flows.
@@ -514,7 +549,7 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Scheduling
 
-- [ ] Provide manual CLI command.
+- [x] Provide manual CLI command.
 - [ ] Provide `scripts/run_maintenance_check.sh`.
 - [ ] Provide `scripts/run_and_send.sh`.
 - [ ] Provide `systemd/langgraph-maintenance-agent.service`.
@@ -526,34 +561,34 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Security And Public-Safety Checklist
 
-- [ ] `.env` is ignored.
-- [ ] Generated reports are ignored by default.
-- [ ] Raw event logs are ignored.
-- [ ] Test fixtures contain only synthetic data.
-- [ ] Example configs use fake paths and placeholders.
-- [ ] Redaction covers common secret names.
-- [ ] Redaction covers Discord webhook URL patterns.
-- [ ] Redaction covers authorization headers.
-- [ ] Redaction covers private key block markers.
-- [ ] Docs warn that this repo is public.
+- [x] `.env` is ignored.
+- [x] Generated reports are ignored by default.
+- [x] Raw event logs are ignored.
+- [x] Test fixtures contain only synthetic data.
+- [x] Example configs use fake paths and placeholders.
+- [x] Redaction covers common secret names.
+- [x] Redaction covers Discord webhook URL patterns.
+- [x] Redaction covers authorization headers.
+- [x] Redaction covers private key block markers.
+- [x] Docs warn that this repo is public.
 - [ ] Pre-commit or documented manual checks scan for common secrets.
-- [ ] No private repository-specific findings are committed.
+- [x] No private repository-specific findings are committed.
 
 ### Testing Checklist
 
-- [ ] Config validation tests.
-- [ ] Unsafe command rejection tests.
-- [ ] Command runner timeout tests.
-- [ ] Redaction tests.
-- [ ] Discord chunking tests.
-- [ ] Markdown rendering tests.
-- [ ] Git metadata parser tests.
-- [ ] Static marker scanner tests.
-- [ ] Workflow smoke test with temporary synthetic git repos.
-- [ ] Failure path test that prevents stale report sending.
-- [ ] No-LLM mode test.
-- [ ] CLI argument parsing tests.
-- [ ] Public fixture safety test.
+- [x] Config validation tests.
+- [x] Unsafe command rejection tests.
+- [x] Command runner timeout tests.
+- [x] Redaction tests.
+- [x] Discord chunking tests.
+- [x] Markdown rendering tests.
+- [x] Git metadata parser tests.
+- [x] Static marker scanner tests.
+- [x] Workflow smoke test with temporary synthetic git repos.
+- [x] Failure path test that prevents stale report sending.
+- [x] No-LLM mode test.
+- [x] CLI argument parsing tests.
+- [x] Public fixture safety test.
 
 ### Observability
 
@@ -567,27 +602,28 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### CLI Requirements
 
-- [ ] `langgraph-maintenance run --config config/repos.yaml`.
-- [ ] `langgraph-maintenance send reports/latest.md`.
-- [ ] `langgraph-maintenance validate-config config/repos.yaml`.
+- [x] `langgraph-maintenance run --config config/repos.yaml`.
+- [x] `langgraph-maintenance send reports/latest.md`.
+- [x] `langgraph-maintenance validate-config config/repos.yaml`.
 - [ ] `langgraph-maintenance render-sample-report`.
 - [x] Support `--summary-only`.
-- [ ] Support `--dry-run`.
-- [ ] Support `--no-llm`.
-- [ ] Support configurable output directory.
+- [x] Support `--dry-run`.
+- [x] Support `--no-llm`.
+- [x] Support configurable output directory.
+- [x] Support configurable max repo-inspection concurrency.
 
 ### Documentation Checklist
 
-- [ ] `README.md` explains the problem, design, and demo workflow.
-- [ ] `ARCHITECTURE.md` includes graph diagram and node descriptions.
-- [ ] `docs/safety.md` explains guardrails and public-repo boundaries.
+- [x] `README.md` explains the problem, design, and demo workflow.
+- [x] `ARCHITECTURE.md` includes graph diagram and node descriptions.
+- [x] `docs/safety.md` explains guardrails and public-repo boundaries.
 - [ ] `docs/portfolio-notes.md` explains what this demonstrates.
-- [ ] `examples/repos.yaml` is public-safe.
-- [ ] `examples/sample-report.md` is synthetic.
-- [ ] Document manual run.
-- [ ] Document Discord setup with placeholders.
-- [ ] Document systemd timer setup.
-- [ ] Document tests and local development.
+- [x] `examples/repos.yaml` is public-safe.
+- [x] `examples/sample-report.md` is synthetic.
+- [x] Document manual run.
+- [x] Document Discord setup with placeholders.
+- [x] Document systemd timer setup.
+- [x] Document tests and local development.
 
 ### Portfolio Presentation Checklist
 
@@ -944,7 +980,7 @@ Deliverables:
       - must not request arbitrary shell/file access
       - must not ask tools for secrets
       - must return structured output
-- [ ] Add summary prompt:
+- [x] Add summary prompt:
       - takes redacted structured findings only
       - does not invent commands or findings
 - [x] Add no-LLM deterministic fallback contracts for tests and demos.
@@ -959,7 +995,7 @@ Tests:
 - [x] Repo inspector structured output validates.
 - [x] Summary structured output validates.
 - [x] Malformed model output becomes an incomplete agent result.
-- [ ] Prompts do not contain private examples or raw local paths.
+- [x] Prompts do not contain private examples or raw local paths.
 
 Validation:
 
@@ -996,7 +1032,7 @@ Deliverables:
 - [x] Implement `redact_report` node.
 - [x] Implement `render_markdown` node.
 - [x] Implement `write_report` node.
-- [ ] Implement `handle_failure` path.
+- [x] Implement `handle_failure` path.
 - [x] Ensure graph state is serializable for tests.
 - [x] Ensure one repository failure becomes a finding/incomplete result when
       possible instead of crashing the whole run.
@@ -1022,7 +1058,7 @@ Tests:
 - [x] Agent tool-call limit produces incomplete check record.
 - [x] Malformed agent output produces validation error and fallback/incomplete
       record.
-- [ ] Fatal config failure writes/returns a useful failure result.
+- [x] Fatal config failure writes/returns a useful failure result.
 
 Validation:
 
@@ -1035,7 +1071,7 @@ Validation:
 
 Exit criteria:
 
-- [ ] This is the core MVP. The project is now a real tool-using LangGraph agent
+- [x] This is the core MVP. The project is now a real tool-using LangGraph agent
       app.
 
 ### Phase 7: Safe Command Tool Execution
@@ -1104,16 +1140,16 @@ delivery.
 
 Deliverables:
 
-- [ ] Implement redaction patterns for:
+- [x] Implement redaction patterns for:
       - Discord webhook URLs
       - common token/secret/password/api-key assignments
       - authorization headers
       - private key block markers
       - `.env`-style values
-- [ ] Implement redaction result metadata, such as count of redactions by type.
-- [ ] Redact tool outputs before they are stored, sent to summary agent, written
+- [x] Implement redaction result metadata, such as count of redactions by type.
+- [x] Redact tool outputs before they are stored, sent to summary agent, written
       to reports, or delivered.
-- [ ] Implement Markdown renderer with required sections:
+- [x] Implement Markdown renderer with required sections:
       - `# Routine Maintenance Report - YYYY-MM-DD`
       - `## Executive Summary`
       - `## Critical Findings`
@@ -1157,7 +1193,7 @@ Validation:
 
 - [x] Generated local report for synthetic agent output is readable and
       public-safe.
-- [ ] `reports/` generated files remain ignored by git.
+- [x] `reports/` generated files remain ignored by git.
 
 Exit criteria:
 
@@ -1194,7 +1230,7 @@ Deliverables:
 - [x] Add CLI command:
       `langgraph-maintenance send reports/latest.md --summary-only`.
 - [x] Add optional workflow flag to send after successful run.
-- [ ] Ensure failed runs send fresh failure report, not stale latest report.
+- [x] Ensure failed runs send fresh failure report, not stale latest report.
 
 Tests:
 
@@ -1206,7 +1242,7 @@ Tests:
 - [x] Webhook redaction test.
 - [x] Mock HTTP success test.
 - [x] Mock HTTP failure test.
-- [ ] Fresh failure report send path test.
+- [x] Fresh failure report send path test.
 
 Validation:
 
@@ -1225,38 +1261,38 @@ deterministic merge behavior.
 
 Deliverables:
 
-- [ ] Implement LangGraph fan-out over enabled repositories.
-- [ ] Run one repo inspector agent branch per enabled repository.
-- [ ] Keep per-repo state isolated.
-- [ ] Keep per-repo tool registries isolated.
-- [ ] Merge per-repo results deterministically.
-- [ ] Preserve stable report ordering by config order or repo name.
-- [ ] Continue when one repo fails unless marked `required`.
-- [ ] Add configurable max concurrency if supported/needed.
+- [x] Implement LangGraph fan-out over enabled repositories.
+- [x] Run one repo inspector agent branch per enabled repository.
+- [x] Keep per-repo state isolated.
+- [x] Keep per-repo tool registries isolated.
+- [x] Merge per-repo results deterministically.
+- [x] Preserve stable report ordering by config order or repo name.
+- [x] Continue when one repo fails unless marked `required`.
+- [x] Add configurable max concurrency if supported/needed.
 - [ ] Add clear logs for repo agent start/end/failure.
-- [ ] Preserve per-repo model/tool-call metadata.
-- [ ] Ensure command timeouts still apply per repo.
-- [ ] Ensure model/tool-call limits apply per repo.
+- [x] Preserve per-repo model/tool-call metadata.
+- [x] Ensure command timeouts still apply per repo.
+- [x] Ensure model/tool-call limits apply per repo.
 
 Tests:
 
-- [ ] Parallel workflow returns same normalized findings as sequential mocked
+- [x] Parallel workflow returns same normalized findings as sequential mocked
       agent workflow for synthetic repos.
-- [ ] One repo failure does not prevent other repo reports.
-- [ ] Required repo failure follows documented behavior.
-- [ ] Report ordering is stable.
-- [ ] Tool-call histories are isolated per repo.
-- [ ] Parallel mocked LLM calls do not require real OpenRouter credentials.
+- [x] One repo failure does not prevent other repo reports.
+- [x] Required repo failure follows documented behavior.
+- [x] Report ordering is stable.
+- [x] Tool-call histories are isolated per repo.
+- [x] Parallel mocked LLM calls do not require real OpenRouter credentials.
 
 Validation:
 
-- [ ] Run against multiple synthetic repos.
+- [x] Run against multiple synthetic repos.
 - [ ] Run against at least one real local test repo only if public-safe and not
       committed into examples.
 
 Exit criteria:
 
-- [ ] LangGraph orchestration is visibly multi-agent and meaningful for
+- [x] LangGraph orchestration is visibly multi-agent and meaningful for
       portfolio review.
 
 ### Phase 11: Scheduling And Runtime Wrappers
@@ -1265,38 +1301,38 @@ Goal: make the tool-using agent usable as a scheduled local maintenance job.
 
 Deliverables:
 
-- [ ] Add `scripts/run_maintenance_check.sh`.
-- [ ] Add `scripts/run_and_send.sh`.
-- [ ] Scripts load local `.env` if present.
-- [ ] Scripts enforce whole-run timeout through
+- [x] Add `scripts/run_maintenance_check.sh`.
+- [x] Add `scripts/run_and_send.sh`.
+- [x] Scripts load local `.env` if present.
+- [x] Scripts enforce whole-run timeout through
       `LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS`.
-- [ ] Scripts support optional OpenRouter environment variables without printing
+- [x] Scripts support optional OpenRouter environment variables without printing
       them:
       - `OPENROUTER_API_KEY`
       - `LANGGRAPH_MAINTENANCE_LLM_MODEL`
-- [ ] Scripts write a fresh failure report when the run fails.
-- [ ] Scripts never send stale `reports/latest.md` after failure.
-- [ ] Add `systemd/langgraph-maintenance-agent.service`.
-- [ ] Add `systemd/langgraph-maintenance-agent.timer`.
-- [ ] Timer runs daily at 11:00 AM local system time.
-- [ ] Document user-level systemd install commands.
-- [ ] Document manual fallback commands.
+- [x] Scripts write a fresh failure report when the run fails.
+- [x] Scripts never send stale `reports/latest.md` after failure.
+- [x] Add `systemd/langgraph-maintenance-agent.service`.
+- [x] Add `systemd/langgraph-maintenance-agent.timer`.
+- [x] Timer runs daily at 11:00 AM local system time.
+- [x] Document user-level systemd install commands.
+- [x] Document manual fallback commands.
 
 Tests:
 
-- [ ] `bash -n` passes for shell scripts.
-- [ ] Failure report path can be simulated without invoking real Discord.
-- [ ] Script logging does not print OpenRouter or Discord secrets.
-- [ ] systemd units have expected `OnCalendar=*-*-* 11:00:00`.
+- [x] `bash -n` passes for shell scripts.
+- [x] Failure report path can be simulated without invoking real Discord.
+- [x] Script logging does not print OpenRouter or Discord secrets.
+- [x] systemd units have expected `OnCalendar=*-*-* 11:00:00`.
 
 Validation:
 
-- [ ] Manual script run succeeds with sample config.
-- [ ] Optional local systemd validation succeeds if environment permits.
+- [x] Manual script run succeeds with sample config.
+- [x] Optional local systemd validation succeeds if environment permits.
 
 Exit criteria:
 
-- [ ] The project can run manually and has documented scheduled deployment.
+- [x] The project can run manually and has documented scheduled deployment.
 
 ### Phase 12: Documentation, Portfolio Polish, And Public Release Prep
 
@@ -1367,15 +1403,112 @@ Exit criteria:
 
 - [ ] Repository is ready to publish as a portfolio project.
 
+### Phase 13: Source Code Review And Improvement Suggestions
+
+Goal: make the agent useful for configured repository owners who want a
+report-only review of what needs attention in code, including likely bugs,
+refactors, maintainability improvements, and test gaps.
+
+Scope:
+
+- The agent may read bounded source-code files from configured repositories.
+- The agent must remain report-only and must not edit, format, upgrade, commit,
+  delete, reset, or clean target repositories.
+- The agent must treat source code as private by default. Reports should cite
+  concise evidence paths and short, redacted snippets only when needed.
+- The agent must exclude generated artifacts and dependency folders before
+  source review. Next.js `.next/`, source maps, `node_modules/`, build output,
+  coverage output, caches, vendored directories, and minified bundles should not
+  create review findings unless explicitly configured later.
+
+Deliverables:
+
+- [ ] Add source-review check names, for example:
+      - `source-review`
+      - `bug-risk-review`
+      - `refactor-review`
+      - `test-gap-review`
+- [ ] Add generated-directory and generated-file exclusions shared by
+      `list_files`, `search_static_markers`, source tools, and reports.
+- [ ] Implement `list_source_files(repo_name, patterns=None)` with language and
+      framework-aware allowlists for common project types.
+- [ ] Implement `read_source_file(repo_name, relative_path)` with strict
+      sensitive-path rejection, generated-file rejection, binary detection,
+      per-file byte limits, and redaction before model/state/report use.
+- [ ] Implement `summarize_source_tree(repo_name)` to identify source roots,
+      major languages, framework signals, test roots, config files, and review
+      candidates without reading the full repository into context.
+- [ ] Add an LLM source-review prompt that asks for:
+      - likely bugs or behavioral risks
+      - refactor opportunities
+      - complexity or duplication hotspots
+      - missing validation/error-handling risks
+      - missing or weak tests around changed/risky areas
+      - public-safe evidence references
+- [ ] Add structured finding categories or subcategories for code quality,
+      bug risk, refactor, complexity, and test gap findings.
+- [ ] Require source-review findings to include concrete evidence paths and a
+      suggested human action.
+- [ ] Add report sections for:
+      - `Bug Risk Review`
+      - `Refactor Opportunities`
+      - `Code Quality Notes`
+      - `Test Gap Notes`
+- [ ] Add no-LLM deterministic fallback that still reports source-review
+      limitations clearly instead of pretending semantic review happened.
+- [ ] Add per-repo budgets for source review, such as max source files, max
+      bytes per file, max total bytes, and max snippets.
+- [ ] Add config options to include or exclude source roots and file patterns
+      per repo without allowing arbitrary sensitive paths.
+- [ ] Ensure all source-review tool output is redacted and bounded before it is
+      stored, summarized, reported, or sent to Discord.
+- [ ] Ensure Discord summaries never include large source snippets.
+
+Tests:
+
+- [ ] Source tools reject `.env`, logs, private keys, databases, raw reports,
+      generated directories, dependency folders, source maps, minified bundles,
+      binary files, and paths outside the repo.
+- [ ] Source tools can read small synthetic source files under approved source
+      roots.
+- [ ] Static marker search ignores generated `.next/` artifacts in a synthetic
+      Next.js repo.
+- [ ] Source tree summary identifies source roots and test roots for synthetic
+      Python and Node/Next.js repos.
+- [ ] LLM source-review prompt never requests arbitrary shell or filesystem
+      access.
+- [ ] Mocked LLM source review produces structured bug/refactor/test-gap
+      findings without real credentials.
+- [ ] No-LLM source-review mode records a skipped/incomplete semantic review
+      rather than false confidence.
+- [ ] Reports render code-review sections with concise evidence and no
+      unredacted secrets.
+
+Validation:
+
+- [ ] Run against a synthetic Python repo with intentional simple bug/refactor
+      examples.
+- [ ] Run against a synthetic Next.js repo with `.next/` generated artifacts and
+      verify generated files are ignored.
+- [ ] Run against one local configured repo after confirming no report content
+      will be committed.
+
+Exit criteria:
+
+- [ ] A configured repo scan can produce useful report-only source-code
+      improvement suggestions based on bounded code reads.
+
 ## Open Questions
 
 - Which LLM provider should be the default for the portfolio version?
 - Should the default demo run in no-LLM mode for easier reviewer setup?
 - Should generated reports be local-only, or should synthetic sample reports be
   committed under `examples/`?
-- Should the first release support only Python repos, or generic repo metadata
-  plus configured commands?
+- Should source review support only Python and Node/Next.js first, or a broader
+  generic language allowlist?
 - Should Discord delivery be optional in the MVP or required for completion?
+- What default source-review budget is useful enough without making private
+  reports too large or expensive?
 
 ## Success Criteria
 

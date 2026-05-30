@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LangGraph routine maintenance agent daily
+
+[Timer]
+OnCalendar=*-*-* 11:00:00
+Persistent=true
+Unit=langgraph-maintenance-agent.service
+
+[Install]
+WantedBy=timers.target

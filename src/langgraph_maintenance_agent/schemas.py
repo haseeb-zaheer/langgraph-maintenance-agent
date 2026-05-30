@@ -93,6 +93,29 @@ class AgentError(BaseModel):
     recoverable: bool = True
 
 
+class ToolCallSummary(BaseModel):
+    """Bounded metadata for one repo inspector tool call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    status: str
+    argument_keys: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+
+
+class RepoInspectionMetadata(BaseModel):
+    """Public-safe metadata for one repo inspector branch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_calls: list[ToolCallSummary] = Field(default_factory=list)
+    tool_calls_made: int = 0
+    iterations: int = 0
+    model_provider: str | None = None
+    model_name: str | None = None
+
+
 class RepoResult(BaseModel):
     """All structured results for one configured repository."""
 
@@ -105,6 +128,7 @@ class RepoResult(BaseModel):
     skipped_checks: list[SkippedCheck] = Field(default_factory=list)
     command_results: list[CommandResult] = Field(default_factory=list)
     errors: list[AgentError] = Field(default_factory=list)
+    metadata: RepoInspectionMetadata = Field(default_factory=RepoInspectionMetadata)
 
 
 class RepoInspectorOutput(BaseModel):

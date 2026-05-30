@@ -56,3 +56,21 @@ such as `(1/3)`.
 
 Failed runs write a fresh failure report and do not update or send stale
 `reports/latest.md`.
+
+## Runtime Scripts And Systemd
+
+`scripts/run_maintenance_check.sh` and `scripts/run_and_send.sh` load local
+`.env` with shell export mode and never echo environment values. Keep
+OpenRouter keys and Discord webhooks in local environment only. The scripts
+default to no-LLM mode; set `LANGGRAPH_MAINTENANCE_USE_LLM=1` only when local
+OpenRouter credentials are configured.
+
+`LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS` enforces a whole-run timeout. If the
+wrapper itself times out or fails before the Python workflow can finish, it
+writes a fresh timestamped failure report under `reports/` and exits nonzero.
+`run_and_send.sh` performs Discord delivery only inside a successful workflow
+run, so timeout and failure paths do not send stale `reports/latest.md`.
+
+The user-level systemd service reads `.env` through `EnvironmentFile=-...` and
+executes `scripts/run_and_send.sh`. The timer uses
+`OnCalendar=*-*-* 11:00:00` with `Persistent=true`.
