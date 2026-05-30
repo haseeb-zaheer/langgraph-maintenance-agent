@@ -234,6 +234,97 @@ report:
     assert state["repo_results"]
 
 
+def test_no_llm_workflow_inspects_two_repos(tmp_path: Path) -> None:
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    (repo_a / "README.md").write_text("# A\n", encoding="utf-8")
+    (repo_b / "README.md").write_text("# B\n", encoding="utf-8")
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: repo-a
+    path: {repo_a}
+    enabled: true
+  - name: repo-b
+    path: {repo_b}
+    enabled: true
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(config_path=config, dry_run=True, use_llm=False)
+
+    assert [result.repo_name for result in state["repo_results"]] == [
+        "repo-a",
+        "repo-b",
+    ]
+
+
+def test_no_llm_workflow_continues_when_repo_path_is_missing(tmp_path: Path) -> None:
+    existing_repo = tmp_path / "existing"
+    existing_repo.mkdir()
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: missing
+    path: {tmp_path / "missing"}
+    enabled: true
+  - name: existing
+    path: {existing_repo}
+    enabled: true
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(config_path=config, dry_run=True, use_llm=False)
+
+    assert [result.repo_name for result in state["repo_results"]] == [
+        "missing",
+        "existing",
+    ]
+    missing_result = state["repo_results"][0]
+    assert missing_result.findings
+    assert any(
+        "does not exist" in finding.description
+        for finding in missing_result.findings
+    )
+
+
+def test_no_llm_workflow_writes_report_and_latest(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = tmp_path / "repos.yaml"
+    output_dir = tmp_path / "reports"
+    config.write_text(
+        f"""
+repos:
+  - name: demo
+    path: {repo}
+    enabled: true
+report:
+  output_dir: {output_dir}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(config_path=config, dry_run=False, use_llm=False)
+
+    assert state["report_path"] is not None
+    report_path = Path(state["report_path"])
+    assert report_path.exists()
+    assert (output_dir / "latest.md").read_text(
+        encoding="utf-8"
+    ) == report_path.read_text(encoding="utf-8")
+
+
 def test_report_redaction_runs_before_report_and_latest_write(tmp_path: Path) -> None:
     config = AppConfig(
         repos=[RepoConfig(name="demo", path=tmp_path, enabled=True)],

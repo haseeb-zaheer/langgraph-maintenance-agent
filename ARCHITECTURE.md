@@ -43,9 +43,9 @@ Batch 2 implements the first tool-using agent workflow:
 
 ## Remaining Boundary
 
-Later batches still own production report polish, full regex redaction,
-configured safe command execution, Discord delivery, parallel fan-out, wrapper
-scripts, and the systemd timer.
+Later batches still own production report polish, redaction metadata, configured
+safe command execution, Discord delivery, parallel fan-out, wrapper scripts, and
+the systemd timer.
 
 ## Agent Safety Boundary
 
@@ -54,8 +54,11 @@ constrained tools such as `git_status`, `list_files`, `read_safe_file`,
 `search_static_markers`, `detect_dependency_manifests`, and
 `run_configured_safe_command`. Tools resolve repo names through validated config,
 block sensitive paths, bound outputs, and redact before content is stored or sent
-back to the model. `run_configured_safe_command` currently returns a skipped
-result until Phase 7 implements execution mechanics.
+back to the model. File traversal skips symlinks and prunes blocked runtime or
+dependency directories. Each inspector run rejects model tool calls or final
+structured output that tries to switch to a different configured repository.
+`run_configured_safe_command` currently returns a skipped result until Phase 7
+implements execution mechanics.
 
 ## Source Of Truth
 

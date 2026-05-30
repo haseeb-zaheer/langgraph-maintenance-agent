@@ -2,7 +2,8 @@
 
 Repository inspector agents can call only the registered Python tools created
 from validated config. Every tool takes `repo_name`; no tool accepts arbitrary
-repository roots from the model.
+repository roots from the model. During an individual repo inspection, tool calls
+for any other repo are rejected.
 
 Current tools:
 
@@ -18,6 +19,7 @@ Current tools:
   until command execution is implemented.
 
 Blocked paths include `.env`, logs, databases, private keys, generated reports,
-caches, path traversal, files outside the repo, oversized files, and likely
-binary files. Tool outputs are JSON-serializable and bounded before they can be
-returned to an LLM.
+caches, symlinks, path traversal, files outside the repo, oversized files, and
+likely binary files. Traversal prunes blocked directories before descending.
+Tool outputs are JSON-serializable and bounded before they can be returned to an
+LLM.

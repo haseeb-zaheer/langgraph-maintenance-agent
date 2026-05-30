@@ -29,6 +29,15 @@ def search_static_markers(context: ToolContext, repo_name: str) -> ToolResult:
             ok=False,
             error=ToolError(code="unknown_repo", message=str(exc)),
         )
+    if not root.exists():
+        return ToolResult(
+            tool_name="search_static_markers",
+            repo_name=repo_name,
+            ok=False,
+            error=ToolError(
+                code="repo_path_missing", message="configured repo path does not exist"
+            ),
+        )
     matches: list[SearchMatch] = []
     for relative_path in _iter_public_files(root):
         path = root / relative_path

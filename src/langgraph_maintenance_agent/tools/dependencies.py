@@ -40,6 +40,15 @@ def detect_dependency_manifests(context: ToolContext, repo_name: str) -> ToolRes
             ok=False,
             error=ToolError(code="unknown_repo", message=str(exc)),
         )
+    if not root.exists():
+        return ToolResult(
+            tool_name="detect_dependency_manifests",
+            repo_name=repo_name,
+            ok=False,
+            error=ToolError(
+                code="repo_path_missing", message="configured repo path does not exist"
+            ),
+        )
     manifests: list[DependencyManifest] = []
     for relative_path in _iter_public_files(root):
         ecosystem = MANIFESTS.get(relative_path.name)

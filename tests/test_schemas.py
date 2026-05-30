@@ -9,6 +9,7 @@ from langgraph_maintenance_agent.schemas import (
     RepoResult,
     Severity,
     SkippedCheck,
+    SummaryOutput,
 )
 
 
@@ -93,3 +94,12 @@ def test_delivery_status_serialization() -> None:
     )
 
     assert DeliveryStatus.model_validate(status.model_dump(mode="json")) == status
+
+
+def test_summary_output_serialization() -> None:
+    summary = SummaryOutput(
+        executive_summary="Two repositories inspected.",
+        next_actions=["Review findings."],
+    )
+
+    assert SummaryOutput.model_validate(summary.model_dump(mode="json")) == summary

@@ -5,9 +5,10 @@ maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
 Batch 2 is complete. The project now includes a repo-scoped safe tool registry,
 OpenRouter chat-completions client, structured repo inspector contracts, and a
-sequential LangGraph workflow with a deterministic no-LLM demo mode. Later
-batches will polish report rendering/redaction, Discord delivery, safe command
-execution, parallel fan-out, and systemd scheduling.
+sequential LangGraph workflow with a deterministic no-LLM demo mode. Reports
+receive minimum secret redaction before local writes. Later batches will polish
+report sections/redaction metadata, Discord delivery, safe command execution,
+parallel fan-out, and systemd scheduling.
 
 ## Safety Model
 
@@ -15,8 +16,11 @@ execution, parallel fan-out, and systemd scheduling.
 - Do not commit real `.env` values, webhook URLs, API keys, private repo paths,
   raw logs, generated private reports, or proprietary snippets.
 - The agent will only inspect repositories explicitly listed in its config.
+- Each repo inspector run is constrained to the repo currently being inspected.
 - LLM agents will call constrained Python tools; they will not receive
   unrestricted shell or filesystem access.
+- Safe file tools skip symlinks, prune sensitive directories, and bound file
+  reads before data can reach the model or report.
 - The agent is report-only and must not fix, format, upgrade, commit, reset,
   clean, or delete files in target repositories.
 
@@ -55,10 +59,11 @@ not write report files or send Discord messages.
 ## Agent Tools
 
 Repo inspector agents can call only registered tools that accept `repo_name`.
-They cannot pass arbitrary filesystem roots or shell commands. Available tools
-include `git_status`, `latest_commit`, `list_files`, `read_safe_file`,
-`search_static_markers`, `detect_dependency_manifests`, and a skipped
-`run_configured_safe_command` stub reserved for the command-execution batch.
+They cannot pass arbitrary filesystem roots or shell commands, and model tool
+calls for a different repo are rejected. Available tools include `git_status`,
+`latest_commit`, `list_files`, `read_safe_file`, `search_static_markers`,
+`detect_dependency_manifests`, and a skipped `run_configured_safe_command` stub
+reserved for the command-execution batch.
 
 ## Source Of Truth
 

@@ -918,7 +918,7 @@ Deliverables:
 - [x] Use environment variable `OPENROUTER_API_KEY`; never read it from config.
 - [x] Use `LANGGRAPH_MAINTENANCE_LLM_MODEL` for the default model override.
 - [x] Document an example model placeholder, not a real private preference.
-- [x] Add provider/model fields to runtime state and run metadata.
+- [ ] Add provider/model fields to runtime state and run metadata.
 - [x] Define structured output schema for repo inspector agent:
       - repo identity
       - checks attempted
@@ -939,7 +939,7 @@ Deliverables:
       - must not request arbitrary shell/file access
       - must not ask tools for secrets
       - must return structured output
-- [x] Add summary prompt:
+- [ ] Add summary prompt:
       - takes redacted structured findings only
       - does not invent commands or findings
 - [x] Add no-LLM deterministic fallback contracts for tests and demos.
@@ -954,7 +954,7 @@ Tests:
 - [x] Repo inspector structured output validates.
 - [x] Summary structured output validates.
 - [x] Malformed model output becomes an incomplete agent result.
-- [x] Prompts do not contain private examples or raw local paths.
+- [ ] Prompts do not contain private examples or raw local paths.
 
 Validation:
 
@@ -989,7 +989,7 @@ Deliverables:
 - [x] Implement `redact_report` node.
 - [x] Implement `render_markdown` node.
 - [x] Implement `write_report` node.
-- [x] Implement `handle_failure` path.
+- [ ] Implement `handle_failure` path.
 - [x] Ensure graph state is serializable for tests.
 - [x] Ensure one repository failure becomes a finding/incomplete result when
       possible instead of crashing the whole run.
@@ -1010,12 +1010,12 @@ Tests:
 - [x] Workflow writes latest report.
 - [x] Workflow dry run does not write files.
 - [x] Workflow no-LLM mode requires no API key.
-- [x] Workflow LLM mode uses mocked OpenRouter client.
+- [ ] Workflow LLM mode uses mocked OpenRouter client.
 - [x] Agent cannot call unregistered tools.
 - [x] Agent tool-call limit produces incomplete check record.
 - [x] Malformed agent output produces validation error and fallback/incomplete
       record.
-- [x] Fatal config failure writes/returns a useful failure result.
+- [ ] Fatal config failure writes/returns a useful failure result.
 
 Validation:
 
@@ -1023,12 +1023,12 @@ Validation:
       works.
 - [x] `langgraph-maintenance run --config <temp-config> --no-llm` writes a
       report.
-- [x] Mocked LLM workflow test proves repo inspector agent uses tools.
+- [ ] Mocked LLM workflow test proves repo inspector agent uses tools.
 - [x] `python -m pytest` passes.
 
 Exit criteria:
 
-- [x] This is the core MVP. The project is now a real tool-using LangGraph agent
+- [ ] This is the core MVP. The project is now a real tool-using LangGraph agent
       app.
 
 ### Phase 7: Safe Command Tool Execution

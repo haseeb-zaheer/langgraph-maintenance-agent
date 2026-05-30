@@ -19,6 +19,19 @@ def test_missing_openrouter_key_fails(monkeypatch: pytest.MonkeyPatch) -> None:
         OpenRouterClient()
 
 
+def test_openrouter_model_name_uses_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("LANGGRAPH_MAINTENANCE_LLM_MODEL", "example/model")
+
+    client = OpenRouterClient(
+        http_client=httpx.Client(transport=httpx.MockTransport(lambda _: None))
+    )
+
+    assert client.model == "example/model"
+
+
 def test_openrouter_parses_tool_calls() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == OPENROUTER_CHAT_COMPLETIONS_URL
