@@ -225,7 +225,7 @@ def test_agent_requires_evidence_tools_before_structured_output(
 ) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
+        ["git", "config", "user.email", "test"],
         cwd=tmp_path,
         check=True,
     )

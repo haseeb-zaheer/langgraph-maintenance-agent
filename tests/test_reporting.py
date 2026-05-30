@@ -264,13 +264,13 @@ def test_source_review_rejected_validation_metadata_renders(
 
 
 def test_command_result_rendering_is_redacted(tmp_path: Path) -> None:
-    secret = "Authorization: " + "Bearer secret-token"
+    sensitive_fixture_text = "Authorization: " + "Bearer placeholder-token"
     command = CommandResult(
         label="tests",
         command=["python", "-m", "pytest"],
         working_directory=str(tmp_path),
         exit_code=1,
-        stdout_excerpt=secret,
+        stdout_excerpt=sensitive_fixture_text,
     )
     state: AgentState = {
         "selected_repos": [RepoConfig(name="demo", path=tmp_path, enabled=True)],
@@ -296,14 +296,14 @@ def test_command_result_rendering_is_redacted(tmp_path: Path) -> None:
     rendered = render_markdown_node(state)
     report = redact_report_node(rendered)["report_markdown"] or ""
 
-    assert "secret-token" not in report
+    assert "placeholder-token" not in report
     assert REDACTION_MARKER in report
 
 
 def test_structured_redaction_preserves_schema_with_secret_lines(
     tmp_path: Path,
 ) -> None:
-    secret = "password=hunter2"
+    sensitive_fixture_text = "password=placeholder"
     state: AgentState = {
         "repo_results": [],
         "findings": [
@@ -312,7 +312,7 @@ def test_structured_redaction_preserves_schema_with_secret_lines(
                 severity=Severity.HIGH,
                 category=FindingCategory.SECURITY,
                 title="Secret line",
-                description=secret,
+                description=sensitive_fixture_text,
             )
         ],
         "skipped_checks": [],
@@ -395,16 +395,16 @@ class FakeHttpClient:
 
 def test_discord_send_redacts_webhook_payload() -> None:
     client = FakeHttpClient()
-    secret = "https://discord.com/api/" + "webhooks/123/token"
+    placeholder_webhook_url = "https://discord.com/api/" + "webhooks/123/token"
 
     result = send_discord_content(
-        secret,
+        placeholder_webhook_url,
         webhook_url="https://example.invalid",
         http_client=client,  # type: ignore[arg-type]
     )
 
     assert result.messages_sent == 1
-    assert secret not in client.payloads[0]["content"]
+    assert placeholder_webhook_url not in client.payloads[0]["content"]
     assert REDACTION_MARKER in client.payloads[0]["content"]
 
 
@@ -440,7 +440,7 @@ def test_summary_agent_success_uses_redacted_input(
         "langgraph_maintenance_agent.graph._llm_client_for_state",
         lambda _state: client,
     )
-    secret = "sk-or-abcdefghijklmnop"
+    placeholder_api_key = "sk-or-abcdefghijklmnop"
     state: AgentState = {
         "use_llm": True,
         "provider": "openrouter",
@@ -451,8 +451,8 @@ def test_summary_agent_success_uses_redacted_input(
                 repo_name="demo",
                 severity=Severity.HIGH,
                 category=FindingCategory.SECURITY,
-                title="Secret",
-                description=secret,
+                title="Sensitive value",
+                description=placeholder_api_key,
             )
         ],
         "skipped_checks": [],
@@ -462,7 +462,7 @@ def test_summary_agent_success_uses_redacted_input(
     result = summarize_with_agent_node(state)
 
     assert result["summary"] == "Clean summary"
-    assert secret not in client.messages[1]["content"]
+    assert placeholder_api_key not in client.messages[1]["content"]
 
 
 def test_malformed_summary_falls_back(

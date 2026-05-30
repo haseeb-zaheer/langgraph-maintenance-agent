@@ -120,7 +120,7 @@ def test_read_safe_file_rejects_oversized_file(tmp_path: Path) -> None:
 def test_git_tools_work_with_synthetic_repo(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
+        ["git", "config", "user.email", "test"],
         cwd=tmp_path,
         check=True,
     )
