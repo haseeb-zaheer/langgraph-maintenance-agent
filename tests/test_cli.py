@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from langgraph_maintenance_agent import __version__
 from langgraph_maintenance_agent.cli import main
@@ -79,3 +80,99 @@ repos:
         assert exc.code == 1
     else:
         raise AssertionError("expected SystemExit")
+
+
+def test_run_forced_discord_passes_override(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_workflow(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "repo_results": [],
+            "findings": [],
+            "report_path": "reports/latest.md",
+            "discord_status": None,
+        }
+
+    monkeypatch.setattr(
+        "langgraph_maintenance_agent.cli.run_workflow",
+        fake_run_workflow,
+    )
+
+    assert (
+        main(
+            [
+                "run",
+                "--config",
+                str(tmp_path / "repos.yaml"),
+                "--no-llm",
+                "--send-discord",
+                "--summary-only",
+            ]
+        )
+        == 0
+    )
+    assert captured["send_discord"] is True
+    assert captured["summary_only"] is True
+
+
+def test_run_no_discord_passes_override(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_workflow(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {
+            "repo_results": [],
+            "findings": [],
+            "report_path": "reports/latest.md",
+            "discord_status": None,
+        }
+
+    monkeypatch.setattr(
+        "langgraph_maintenance_agent.cli.run_workflow",
+        fake_run_workflow,
+    )
+
+    assert (
+        main(
+            [
+                "run",
+                "--config",
+                str(tmp_path / "repos.yaml"),
+                "--no-llm",
+                "--no-discord",
+            ]
+        )
+        == 0
+    )
+    assert captured["send_discord"] is False
+
+
+def test_send_command_reads_report_and_sends_summary(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "report.md"
+    report.write_text(
+        "# Routine Maintenance Report - 2026-05-30\n\n"
+        "## Executive Summary\n\nEverything is fine.\n\n"
+        "## Critical Findings\n\nNone found.\n\n"
+        "## High Priority\n\nNone found.\n\n"
+        "## Medium Priority\n\nNone found.\n\n"
+        "## Suggested Next Actions\n\n- Keep watching.\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, str] = {}
+
+    def fake_send(content: str) -> Any:
+        captured["content"] = content
+        return type("Result", (), {"messages_sent": 1})()
+
+    monkeypatch.setattr(
+        "langgraph_maintenance_agent.cli.send_discord_content",
+        fake_send,
+    )
+
+    assert main(["send", str(report), "--summary-only"]) == 0
+    assert "Everything is fine" in captured["content"]
+    assert "Report path" in captured["content"]

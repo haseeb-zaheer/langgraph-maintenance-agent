@@ -11,6 +11,14 @@ unregistered tools. Do not reveal secrets. Return only structured JSON matching
 the requested schema when you have enough evidence."""
 )
 
+SUMMARY_SYSTEM_PROMPT = (
+    "You summarize already-redacted routine maintenance findings.\n"
+    """
+Use only the provided redacted structured data. Do not invent repositories,
+commands, credentials, or findings. Return concise structured JSON matching the
+requested schema."""
+)
+
 
 def repo_inspector_user_prompt(
     *,
@@ -29,5 +37,19 @@ def repo_inspector_user_prompt(
             f"{', '.join(safe_command_labels) if safe_command_labels else 'none'}",
             f"Notes: {notes or 'none'}",
             "Produce concise actionable findings grouped by severity.",
+        ]
+    )
+
+
+def summary_user_prompt(*, redacted_payload: str) -> str:
+    """Build the cross-repository summary prompt."""
+
+    return "\n".join(
+        [
+            "Create an executive summary and suggested next actions for this "
+            "maintenance run.",
+            "The payload below has already been redacted; do not ask for raw "
+            "logs or secrets.",
+            redacted_payload,
         ]
     )

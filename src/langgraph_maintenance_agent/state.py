@@ -37,5 +37,9 @@ class AgentState(TypedDict, total=False):
     next_actions: list[str]
     report_markdown: str | None
     report_path: str | None
+    redaction_count: int
+    redaction_counts_by_type: dict[str, int]
+    send_discord: bool | None
+    summary_only: bool
     discord_status: DeliveryStatus | None
     errors: list[AgentError]

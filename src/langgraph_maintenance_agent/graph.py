@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import copyfile
@@ -9,21 +10,39 @@ from typing import Any, cast
 
 from langgraph.graph import END, StateGraph
 
+from langgraph_maintenance_agent.agents.prompts import (
+    SUMMARY_SYSTEM_PROMPT,
+    summary_user_prompt,
+)
 from langgraph_maintenance_agent.agents.repo_inspector import RepoInspectorAgent
 from langgraph_maintenance_agent.config import ConfigError, load_config
 from langgraph_maintenance_agent.llm.openrouter import OpenRouterClient
-from langgraph_maintenance_agent.reporting.redaction import redact_text
+from langgraph_maintenance_agent.reporting.discord import (
+    DiscordDeliveryError,
+    send_discord_content,
+)
+from langgraph_maintenance_agent.reporting.markdown import (
+    compact_discord_summary,
+    render_failure_report,
+    render_report,
+)
+from langgraph_maintenance_agent.reporting.redaction import (
+    redact_text,
+    redact_text_with_metadata,
+)
 from langgraph_maintenance_agent.runtime.paths import (
     choose_report_path,
     ensure_output_dir,
     latest_report_path,
+    timestamped_report_filename,
 )
 from langgraph_maintenance_agent.schemas import (
     AgentError,
-    CommandResult,
+    DeliveryStatus,
     Finding,
     RepoResult,
     SkippedCheck,
+    SummaryOutput,
 )
 from langgraph_maintenance_agent.state import AgentState
 from langgraph_maintenance_agent.tools import (
@@ -58,6 +77,9 @@ def prepare_run_node(state: AgentState) -> AgentState:
         "findings": [],
         "skipped_checks": [],
         "errors": [],
+        "redaction_count": 0,
+        "redaction_counts_by_type": {},
+        "summary_only": state.get("summary_only", False),
     }
 
 
@@ -122,8 +144,44 @@ def merge_results_node(state: AgentState) -> AgentState:
     return {**state, "findings": findings, "skipped_checks": skipped, "errors": errors}
 
 
+def redact_structured_state_node(state: AgentState) -> AgentState:
+    """Redact structured results before summary and rendering."""
+
+    payload = {
+        "repo_results": [
+            result.model_dump(mode="json") for result in state.get("repo_results", [])
+        ],
+        "findings": [
+            finding.model_dump(mode="json") for finding in state.get("findings", [])
+        ],
+        "skipped_checks": [
+            skipped.model_dump(mode="json")
+            for skipped in state.get("skipped_checks", [])
+        ],
+        "errors": [error.model_dump(mode="json") for error in state.get("errors", [])],
+    }
+    redacted = redact_text_with_metadata(json.dumps(payload))
+    decoded = json.loads(redacted.text)
+    return {
+        **state,
+        "repo_results": [
+            RepoResult.model_validate(item) for item in decoded["repo_results"]
+        ],
+        "findings": [Finding.model_validate(item) for item in decoded["findings"]],
+        "skipped_checks": [
+            SkippedCheck.model_validate(item) for item in decoded["skipped_checks"]
+        ],
+        "errors": [AgentError.model_validate(item) for item in decoded["errors"]],
+        "redaction_count": state.get("redaction_count", 0) + redacted.total_count,
+        "redaction_counts_by_type": _merge_counts(
+            state.get("redaction_counts_by_type", {}),
+            redacted.counts_by_type,
+        ),
+    }
+
+
 def summarize_fallback_node(state: AgentState) -> AgentState:
-    """Create a deterministic summary for Batch 2 dry-run/public demo."""
+    """Create a deterministic summary for no-LLM mode or fallback."""
 
     repos = state.get("selected_repos", [])
     findings = state.get("findings", [])
@@ -139,95 +197,86 @@ def summarize_fallback_node(state: AgentState) -> AgentState:
     return {**state, "summary": summary, "next_actions": next_actions}
 
 
-def render_markdown_node(state: AgentState) -> AgentState:
-    """Render a simple Markdown report."""
+def summarize_with_agent_node(state: AgentState) -> AgentState:
+    """Summarize redacted structured results using LLM mode when enabled."""
 
-    lines = [
-        "# Routine Maintenance Report",
-        "",
-        f"- Run ID: {state.get('run_id', 'unknown')}",
-        f"- Started: {state.get('started_at', 'unknown')}",
-        f"- Dry run: {state.get('dry_run', False)}",
-        "",
-        "## Summary",
-        "",
-        state.get("summary") or "No summary generated.",
-        "",
-        "## Findings",
-        "",
-    ]
-    findings = state.get("findings", [])
-    if findings:
-        for finding in findings:
-            lines.extend(
-                [
-                    (
-                        f"### [{finding.severity.value}] "
-                        f"{finding.repo_name}: {finding.title}"
-                    ),
-                    "",
-                    finding.description,
-                    "",
-                ]
-            )
-    else:
-        lines.extend(["No findings.", ""])
-    lines.extend(["## Command Results", ""])
-    command_rows: list[tuple[str, CommandResult]] = []
-    for result in state.get("repo_results", []):
-        for command_result in result.command_results:
-            command_rows.append((result.repo_name, command_result))
-    if command_rows:
-        for repo_name, command_result in command_rows:
-            exit_code = (
-                "timeout"
-                if command_result.timed_out
-                else str(command_result.exit_code)
-            )
-            lines.extend(
-                [
-                    f"### `{repo_name}` `{command_result.label}`",
-                    "",
-                    f"- Exit code: {exit_code}",
-                    f"- Timed out: {command_result.timed_out}",
-                    f"- Timeout seconds: {command_result.timeout_seconds}",
-                    f"- Duration seconds: {command_result.duration_seconds}",
-                    "",
-                ]
-            )
-            if command_result.stdout_excerpt:
-                lines.extend(
-                    [
-                        "Stdout excerpt:",
-                        "",
-                        "```text",
-                        command_result.stdout_excerpt,
-                        "```",
-                        "",
-                    ]
-                )
-            if command_result.stderr_excerpt:
-                lines.extend(
-                    [
-                        "Stderr excerpt:",
-                        "",
-                        "```text",
-                        command_result.stderr_excerpt,
-                        "```",
-                        "",
-                    ]
-                )
-    else:
-        lines.extend(["No command results.", ""])
-    lines.extend(["## Skipped Checks", ""])
-    skipped = state.get("skipped_checks", [])
-    if skipped:
-        for item in skipped:
-            lines.append(f"- `{item.repo_name}` `{item.check_name}`: {item.reason}")
-    else:
-        lines.append("No skipped checks.")
-    lines.append("")
-    return {**state, "report_markdown": "\n".join(lines)}
+    if not state.get("use_llm", False):
+        return summarize_fallback_node(state)
+    try:
+        client = _llm_client_for_state(state)
+        if client is None:
+            return summarize_fallback_node(state)
+        payload = json.dumps(
+            {
+                "repo_results": [
+                    result.model_dump(mode="json")
+                    for result in state.get("repo_results", [])
+                ],
+                "findings": [
+                    finding.model_dump(mode="json")
+                    for finding in state.get("findings", [])
+                ],
+                "skipped_checks": [
+                    skipped.model_dump(mode="json")
+                    for skipped in state.get("skipped_checks", [])
+                ],
+                "errors": [
+                    error.model_dump(mode="json")
+                    for error in state.get("errors", [])
+                ],
+            },
+            sort_keys=True,
+        )
+        redacted_payload = redact_text(payload)
+        response = client.chat(
+            messages=[
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": summary_user_prompt(redacted_payload=redacted_payload),
+                },
+            ],
+            response_schema=SummaryOutput.model_json_schema(),
+        )
+        output = SummaryOutput.model_validate_json(response.content or "")
+        return {
+            **state,
+            "summary": output.executive_summary,
+            "next_actions": output.next_actions,
+        }
+    except Exception as exc:
+        fallback = summarize_fallback_node(state)
+        errors = [
+            *fallback.get("errors", []),
+            AgentError(
+                message=f"summary agent failed; deterministic fallback used: {exc}",
+                stage="summarize_with_agent",
+                recoverable=True,
+            ),
+        ]
+        return {**fallback, "errors": errors}
+
+
+def render_markdown_node(state: AgentState) -> AgentState:
+    """Render a structured Markdown report."""
+
+    return {
+        **state,
+        "report_markdown": render_report(
+            run_id=state.get("run_id", "unknown"),
+            started_at=state.get("started_at", "unknown"),
+            dry_run=state.get("dry_run", False),
+            selected_repos=state.get("selected_repos", []),
+            repo_results=state.get("repo_results", []),
+            findings=state.get("findings", []),
+            skipped_checks=state.get("skipped_checks", []),
+            errors=state.get("errors", []),
+            summary=state.get("summary"),
+            next_actions=state.get("next_actions", []),
+            redaction_count=state.get("redaction_count", 0),
+            redaction_counts_by_type=state.get("redaction_counts_by_type", {}),
+        ),
+    }
 
 
 def redact_report_node(state: AgentState) -> AgentState:
@@ -236,7 +285,16 @@ def redact_report_node(state: AgentState) -> AgentState:
     report_markdown = state.get("report_markdown")
     if report_markdown is None:
         return state
-    return {**state, "report_markdown": redact_text(report_markdown)}
+    redacted = redact_text_with_metadata(report_markdown)
+    return {
+        **state,
+        "report_markdown": redacted.text,
+        "redaction_count": state.get("redaction_count", 0) + redacted.total_count,
+        "redaction_counts_by_type": _merge_counts(
+            state.get("redaction_counts_by_type", {}),
+            redacted.counts_by_type,
+        ),
+    }
 
 
 def write_report_node(state: AgentState) -> AgentState:
@@ -259,6 +317,51 @@ def write_report_node(state: AgentState) -> AgentState:
     return {**state, "report_path": str(report_path)}
 
 
+def send_discord_summary_node(state: AgentState) -> AgentState:
+    """Optionally send the redacted report or compact summary to Discord."""
+
+    enabled = state.get("send_discord")
+    if enabled is None:
+        enabled = state["config"].report.discord_enabled
+    if state.get("dry_run", False) or not enabled:
+        return {
+            **state,
+            "discord_status": DeliveryStatus(
+                destination="discord",
+                attempted=False,
+                success=False,
+                message="delivery disabled",
+            ),
+        }
+    report_markdown = state.get("report_markdown") or ""
+    content = (
+        compact_discord_summary(report_markdown, state.get("report_path"))
+        if state.get("summary_only", False)
+        else report_markdown
+    )
+    try:
+        result = send_discord_content(content)
+    except DiscordDeliveryError as exc:
+        return {
+            **state,
+            "discord_status": DeliveryStatus(
+                destination="discord",
+                attempted=True,
+                success=False,
+                message=str(exc),
+            ),
+        }
+    return {
+        **state,
+        "discord_status": DeliveryStatus(
+            destination="discord",
+            attempted=True,
+            success=True,
+            message=f"sent {result.messages_sent} message(s)",
+        ),
+    }
+
+
 def build_graph() -> Any:
     """Build the sequential Batch 2 LangGraph workflow."""
 
@@ -270,10 +373,12 @@ def build_graph() -> Any:
     graph.add_node("inspect_repo_agent", inspect_repo_agent_node)
     graph.add_node("normalize_agent_output", normalize_agent_output_node)
     graph.add_node("merge_results", merge_results_node)
-    graph.add_node("summarize_with_agent", summarize_fallback_node)
+    graph.add_node("redact_structured_state", redact_structured_state_node)
+    graph.add_node("summarize_with_agent", summarize_with_agent_node)
     graph.add_node("render_markdown", render_markdown_node)
     graph.add_node("redact_report", redact_report_node)
     graph.add_node("write_report", write_report_node)
+    graph.add_node("send_discord_summary", send_discord_summary_node)
     graph.set_entry_point("load_config")
     graph.add_edge("load_config", "prepare_run")
     graph.add_edge("prepare_run", "select_repos")
@@ -281,11 +386,13 @@ def build_graph() -> Any:
     graph.add_edge("build_tool_registry", "inspect_repo_agent")
     graph.add_edge("inspect_repo_agent", "normalize_agent_output")
     graph.add_edge("normalize_agent_output", "merge_results")
-    graph.add_edge("merge_results", "summarize_with_agent")
+    graph.add_edge("merge_results", "redact_structured_state")
+    graph.add_edge("redact_structured_state", "summarize_with_agent")
     graph.add_edge("summarize_with_agent", "render_markdown")
     graph.add_edge("render_markdown", "redact_report")
     graph.add_edge("redact_report", "write_report")
-    graph.add_edge("write_report", END)
+    graph.add_edge("write_report", "send_discord_summary")
+    graph.add_edge("send_discord_summary", END)
     return graph.compile()
 
 
@@ -298,6 +405,8 @@ def run_workflow(
     provider: str = "openrouter",
     max_tool_calls: int = 12,
     max_agent_iterations: int = 6,
+    send_discord: bool | None = None,
+    summary_only: bool = False,
 ) -> AgentState:
     """Run the sequential workflow and return final state."""
 
@@ -310,5 +419,52 @@ def run_workflow(
         "provider": provider,
         "max_tool_calls": max_tool_calls,
         "max_agent_iterations": max_agent_iterations,
+        "send_discord": send_discord,
+        "summary_only": summary_only,
     }
-    return cast(AgentState, graph.invoke(initial))
+    try:
+        return cast(AgentState, graph.invoke(initial))
+    except Exception as exc:
+        _write_failure_report(
+            config_path=config_path,
+            output_dir=output_dir,
+            dry_run=dry_run,
+            stage="workflow",
+            error_message=str(exc),
+        )
+        raise
+
+
+def _write_failure_report(
+    *,
+    config_path: Path,
+    output_dir: Path | None,
+    dry_run: bool,
+    stage: str,
+    error_message: str,
+) -> None:
+    if dry_run:
+        return
+    now = datetime.now(UTC)
+    target_dir = ensure_output_dir(output_dir or Path("reports"))
+    report_path = target_dir / timestamped_report_filename(now, "failure")
+    redacted = redact_text(
+        render_failure_report(
+            run_id=now.strftime("%Y%m%d%H%M%S"),
+            timestamp=now.isoformat(),
+            stage=stage,
+            error_message=error_message,
+            config_path=str(config_path),
+        )
+    )
+    report_path.write_text(redacted, encoding="utf-8")
+
+
+def _merge_counts(
+    left: dict[str, int],
+    right: dict[str, int],
+) -> dict[str, int]:
+    merged = dict(left)
+    for key, value in right.items():
+        merged[key] = merged.get(key, 0) + value
+    return merged
