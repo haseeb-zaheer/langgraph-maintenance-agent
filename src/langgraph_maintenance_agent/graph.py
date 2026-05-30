@@ -20,6 +20,7 @@ from langgraph_maintenance_agent.runtime.paths import (
 )
 from langgraph_maintenance_agent.schemas import (
     AgentError,
+    CommandResult,
     Finding,
     RepoResult,
     SkippedCheck,
@@ -171,6 +172,52 @@ def render_markdown_node(state: AgentState) -> AgentState:
             )
     else:
         lines.extend(["No findings.", ""])
+    lines.extend(["## Command Results", ""])
+    command_rows: list[tuple[str, CommandResult]] = []
+    for result in state.get("repo_results", []):
+        for command_result in result.command_results:
+            command_rows.append((result.repo_name, command_result))
+    if command_rows:
+        for repo_name, command_result in command_rows:
+            exit_code = (
+                "timeout"
+                if command_result.timed_out
+                else str(command_result.exit_code)
+            )
+            lines.extend(
+                [
+                    f"### `{repo_name}` `{command_result.label}`",
+                    "",
+                    f"- Exit code: {exit_code}",
+                    f"- Timed out: {command_result.timed_out}",
+                    f"- Duration seconds: {command_result.duration_seconds}",
+                    "",
+                ]
+            )
+            if command_result.stdout_excerpt:
+                lines.extend(
+                    [
+                        "Stdout excerpt:",
+                        "",
+                        "```text",
+                        command_result.stdout_excerpt,
+                        "```",
+                        "",
+                    ]
+                )
+            if command_result.stderr_excerpt:
+                lines.extend(
+                    [
+                        "Stderr excerpt:",
+                        "",
+                        "```text",
+                        command_result.stderr_excerpt,
+                        "```",
+                        "",
+                    ]
+                )
+    else:
+        lines.extend(["No command results.", ""])
     lines.extend(["## Skipped Checks", ""])
     skipped = state.get("skipped_checks", [])
     if skipped:

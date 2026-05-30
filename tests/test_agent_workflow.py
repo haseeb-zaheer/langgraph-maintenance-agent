@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 from langgraph_maintenance_agent.agents.repo_inspector import RepoInspectorAgent
-from langgraph_maintenance_agent.config import AppConfig, RepoConfig
+from langgraph_maintenance_agent.config import AppConfig, CheckName, RepoConfig
 from langgraph_maintenance_agent.graph import (
     redact_report_node,
     render_markdown_node,
@@ -16,7 +17,13 @@ from langgraph_maintenance_agent.llm.openrouter import (
     ChatCompletionResult,
     ChatToolCall,
 )
-from langgraph_maintenance_agent.schemas import Finding, FindingCategory, Severity
+from langgraph_maintenance_agent.schemas import (
+    CommandResult,
+    Finding,
+    FindingCategory,
+    RepoResult,
+    Severity,
+)
 from langgraph_maintenance_agent.state import AgentState
 from langgraph_maintenance_agent.tools import build_tool_registry
 from langgraph_maintenance_agent.tools.registry import ToolContext
@@ -265,6 +272,92 @@ report:
     ]
 
 
+def test_no_llm_workflow_includes_configured_command_results(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: demo
+    path: {repo}
+    enabled: true
+    checks:
+      - tests
+    safe_commands:
+      tests: {sys.executable} -c "print('ok')"
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(config_path=config, dry_run=True, use_llm=False)
+
+    result = state["repo_results"][0]
+    assert len(result.command_results) == 1
+    assert result.command_results[0].label == "tests"
+    assert result.command_results[0].exit_code == 0
+
+
+def test_no_llm_nonzero_command_becomes_finding(tmp_path: Path) -> None:
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos(
+            [
+                RepoConfig(
+                    name="demo",
+                    path=tmp_path,
+                    enabled=True,
+                    checks=[CheckName.TESTS],
+                    safe_commands={
+                        "tests": f"{sys.executable} -c \"import sys; sys.exit(3)\""
+                    },
+                )
+            ]
+        )
+    )
+
+    result = agent.inspect_without_llm(
+        RepoConfig(
+            name="demo",
+            path=tmp_path,
+            enabled=True,
+            checks=[CheckName.TESTS],
+            safe_commands={"tests": f"{sys.executable} -c \"import sys; sys.exit(3)\""},
+        )
+    )
+
+    assert result.command_results[0].exit_code == 3
+    assert any(
+        finding.title == "tests command failed"
+        and finding.command_label == "tests"
+        and finding.needs_human_review
+        for finding in result.findings
+    )
+
+
+def test_command_style_check_without_safe_command_is_skipped(tmp_path: Path) -> None:
+    agent = RepoInspectorAgent(tool_registry=registry_for(tmp_path))
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.TESTS],
+        safe_commands={},
+    )
+
+    result = agent.inspect_without_llm(repo)
+
+    assert not result.command_results
+    assert any(
+        skipped.check_name == "tests"
+        and "No safe_commands entry configured" in skipped.reason
+        for skipped in result.skipped_checks
+    )
+
+
 def test_no_llm_workflow_continues_when_repo_path_is_missing(tmp_path: Path) -> None:
     existing_repo = tmp_path / "existing"
     existing_repo.mkdir()
@@ -360,3 +453,48 @@ def test_report_redaction_runs_before_report_and_latest_write(tmp_path: Path) ->
     assert "secret-token" not in report_text
     assert "[redacted]" in report_text
     assert report_text == latest_text
+
+
+def test_report_includes_redacted_command_results(tmp_path: Path) -> None:
+    config = AppConfig(
+        repos=[RepoConfig(name="demo", path=tmp_path, enabled=True)],
+    )
+    secret_key = "sk-" + "b" * 20
+    state: AgentState = {
+        "config": config,
+        "output_dir": str(tmp_path / "reports"),
+        "started_at": "2026-05-30T00:00:00+00:00",
+        "run_id": "test",
+        "dry_run": False,
+        "findings": [],
+        "skipped_checks": [],
+        "summary": "summary",
+        "repo_results": [
+            RepoResult(
+                repo_name="demo",
+                path=str(tmp_path),
+                command_results=[
+                    CommandResult(
+                        label="tests",
+                        command=["python", "-c", "print('ok')"],
+                        working_directory=str(tmp_path),
+                        exit_code=0,
+                        timed_out=False,
+                        stdout_excerpt=f"ok {secret_key}",
+                        stderr_excerpt="",
+                        duration_seconds=0.01,
+                    )
+                ],
+            )
+        ],
+    }
+
+    rendered = render_markdown_node(state)
+    redacted = redact_report_node(rendered)
+    written = write_report_node(redacted)
+
+    report_text = Path(written["report_path"]).read_text(encoding="utf-8")
+    assert "## Command Results" in report_text
+    assert "`demo` `tests`" in report_text
+    assert secret_key not in report_text
+    assert "[redacted]" in report_text
