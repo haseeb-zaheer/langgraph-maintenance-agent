@@ -62,7 +62,6 @@ SAFE_READ_NAMES = {
     "README",
     "README.md",
     "ARCHITECTURE.md",
-    "PRD.md",
     "AGENTS.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",

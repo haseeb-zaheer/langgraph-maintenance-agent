@@ -123,7 +123,7 @@ an incomplete reason. Nonzero exits are preserved as command results and
 normalized into findings by the inspector/reporting path. In LLM mode, reported
 command results come only from actual command tool calls, not final model JSON.
 
-## Source Of Truth
+## Documentation
 
-`PRD.md` is the main implementation reference and checklist. This architecture
-document should stay aligned with the PRD when behavior or structure changes.
+This architecture document should stay aligned with `README.md` and
+`AGENTS.md` when behavior, structure, safety rules, or scheduling changes.

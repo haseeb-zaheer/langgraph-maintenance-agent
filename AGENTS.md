@@ -60,7 +60,6 @@ redacted examples and synthetic sample reports.
 Keep these files up to date whenever project scope, architecture, safety rules,
 configuration, scheduling, or report behavior changes:
 
-- `PRD.md`
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - `README.md`

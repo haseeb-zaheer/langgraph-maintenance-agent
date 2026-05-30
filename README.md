@@ -205,11 +205,12 @@ Generated reports are ignored except for `reports/.gitkeep`. Fatal
 config/runtime failures write fresh timestamped failure reports and do not
 replace or send stale `reports/latest.md`.
 
-## Source Of Truth
+## Project Documentation
 
-`PRD.md` is the main implementation reference and launch checklist. Update it
-whenever scope, architecture, behavior, safety rules, docs, packaging,
-scheduling, or validation status changes.
+Use `README.md` for public setup and user workflows, `ARCHITECTURE.md` for the
+implementation design, and `AGENTS.md` for local agent working rules. Keep
+those files aligned whenever scope, behavior, safety rules, packaging,
+scheduling, or validation guidance changes.
 
 ## License
 
