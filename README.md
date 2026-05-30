@@ -32,8 +32,10 @@ Validate the public-safe example config:
 uv run langgraph-maintenance validate-config examples/repos.yaml
 ```
 
+Batch 1 currently provides config validation, typed schemas, and runtime helper
+tests. End-to-end repository inspection starts in a later phase.
+
 ## Source Of Truth
 
 `PRD.md` is the main implementation reference and checklist. Update it whenever
 scope, architecture, behavior, safety rules, or phase status changes.
-

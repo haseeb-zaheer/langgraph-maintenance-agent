@@ -44,4 +44,3 @@ execution.
 
 `PRD.md` is the main implementation reference and checklist. This architecture
 document should stay aligned with the PRD when behavior or structure changes.
-

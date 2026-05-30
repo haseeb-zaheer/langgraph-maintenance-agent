@@ -569,16 +569,16 @@ Implementation notes:
 
 Validation:
 
-- [ ] `python -m pytest` runs, even if only smoke tests exist.
-- [ ] `ruff check .` runs if ruff is configured.
-- [ ] `langgraph-maintenance --help` works after editable install.
-- [ ] `git status --short --ignored` shows no accidental secret/runtime files
+- [x] `python -m pytest` runs, even if only smoke tests exist.
+- [x] `ruff check .` runs if ruff is configured.
+- [x] `langgraph-maintenance --help` works after editable install.
+- [x] `git status --short --ignored` shows no accidental secret/runtime files
       staged.
 
 Exit criteria:
 
-- [ ] A future session can install the project locally and run the empty CLI.
-- [ ] Public-facing docs explain what the project is and what is not implemented
+- [x] A future session can install the project locally and run the empty CLI.
+- [x] Public-facing docs explain what the project is and what is not implemented
       yet.
 
 ### Phase 2: Config Schema And Validation
@@ -698,17 +698,17 @@ Deliverables:
 - [x] Implement `AgentError` schema.
 - [x] Implement `AgentState` using `TypedDict` or Pydantic-compatible state.
 - [x] Implement deterministic finding fingerprinting for dedupe.
-- [ ] Implement runtime path helpers for report names:
+- [x] Implement runtime path helpers for report names:
       `YYYY-MM-DD-routine-maintenance.md` and timestamp fallback.
-- [ ] Implement bounded text helpers for command output excerpts.
+- [x] Implement bounded text helpers for command output excerpts.
 
 Tests:
 
 - [x] Finding serialization round trip.
 - [x] Fingerprints are stable for equivalent findings.
 - [x] Fingerprints differ for meaningfully different findings.
-- [ ] Command output excerpts are bounded.
-- [ ] Report path helper avoids overwriting existing date report.
+- [x] Command output excerpts are bounded.
+- [x] Report path helper avoids overwriting existing date report.
 - [x] Agent state can be serialized to JSON-safe structures.
 
 Validation:
@@ -718,7 +718,7 @@ Validation:
 
 Exit criteria:
 
-- [ ] Later phases can return structured results without inventing ad hoc
+- [x] Later phases can return structured results without inventing ad hoc
       dictionaries.
 
 ### Phase 4: Built-In Read-Only Repository Checks
