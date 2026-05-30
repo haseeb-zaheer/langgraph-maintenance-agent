@@ -160,8 +160,7 @@ def redact_structured_state_node(state: AgentState) -> AgentState:
         ],
         "errors": [error.model_dump(mode="json") for error in state.get("errors", [])],
     }
-    redacted = redact_text_with_metadata(json.dumps(payload))
-    decoded = json.loads(redacted.text)
+    decoded, total_count, counts_by_type = _redact_json_compatible(payload)
     return {
         **state,
         "repo_results": [
@@ -172,10 +171,10 @@ def redact_structured_state_node(state: AgentState) -> AgentState:
             SkippedCheck.model_validate(item) for item in decoded["skipped_checks"]
         ],
         "errors": [AgentError.model_validate(item) for item in decoded["errors"]],
-        "redaction_count": state.get("redaction_count", 0) + redacted.total_count,
+        "redaction_count": state.get("redaction_count", 0) + total_count,
         "redaction_counts_by_type": _merge_counts(
             state.get("redaction_counts_by_type", {}),
-            redacted.counts_by_type,
+            counts_by_type,
         ),
     }
 
@@ -286,9 +285,16 @@ def redact_report_node(state: AgentState) -> AgentState:
     if report_markdown is None:
         return state
     redacted = redact_text_with_metadata(report_markdown)
+    redacted_text = redacted.text
+    if redacted.total_count and "Redaction warning:" not in redacted_text:
+        redacted_text = _insert_redaction_warning(
+            redacted_text,
+            redaction_count=redacted.total_count,
+            redaction_counts_by_type=redacted.counts_by_type,
+        )
     return {
         **state,
-        "report_markdown": redacted.text,
+        "report_markdown": redacted_text,
         "redaction_count": state.get("redaction_count", 0) + redacted.total_count,
         "redaction_counts_by_type": _merge_counts(
             state.get("redaction_counts_by_type", {}),
@@ -468,3 +474,55 @@ def _merge_counts(
     for key, value in right.items():
         merged[key] = merged.get(key, 0) + value
     return merged
+
+
+def _redact_json_compatible(value: Any) -> tuple[Any, int, dict[str, int]]:
+    """Redact string leaves while preserving JSON-compatible structure."""
+
+    if isinstance(value, str):
+        redacted = redact_text_with_metadata(value)
+        return redacted.text, redacted.total_count, redacted.counts_by_type
+    if isinstance(value, list):
+        redacted_items: list[Any] = []
+        list_total_count = 0
+        list_counts_by_type: dict[str, int] = {}
+        for item in value:
+            redacted_item, item_count, item_counts = _redact_json_compatible(item)
+            redacted_items.append(redacted_item)
+            list_total_count += item_count
+            list_counts_by_type = _merge_counts(list_counts_by_type, item_counts)
+        return redacted_items, list_total_count, list_counts_by_type
+    if isinstance(value, dict):
+        redacted_dict: dict[Any, Any] = {}
+        dict_total_count = 0
+        dict_counts_by_type: dict[str, int] = {}
+        for key, item in value.items():
+            redacted_item, item_count, item_counts = _redact_json_compatible(item)
+            redacted_dict[key] = redacted_item
+            dict_total_count += item_count
+            dict_counts_by_type = _merge_counts(dict_counts_by_type, item_counts)
+        return redacted_dict, dict_total_count, dict_counts_by_type
+    return value, 0, {}
+
+
+def _insert_redaction_warning(
+    report_markdown: str,
+    *,
+    redaction_count: int,
+    redaction_counts_by_type: dict[str, int],
+) -> str:
+    detail = ", ".join(
+        f"{name}: {count}" for name, count in sorted(redaction_counts_by_type.items())
+    )
+    warning = (
+        "> Redaction warning: sensitive-looking content was redacted before "
+        f"this report was persisted. Total redactions: {redaction_count}"
+        + (f" ({detail})." if detail else ".")
+    )
+    lines = report_markdown.splitlines()
+    insert_at = 0
+    for index, line in enumerate(lines):
+        if line.startswith("## "):
+            insert_at = index
+            break
+    return "\n".join([*lines[:insert_at], warning, "", *lines[insert_at:]]) + "\n"

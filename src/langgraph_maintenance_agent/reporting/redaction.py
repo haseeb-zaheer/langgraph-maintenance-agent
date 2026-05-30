@@ -24,7 +24,9 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "secret_line",
-        re.compile(r"(?im)^(.*(?:api[_-]?key|token|secret|password).*)$"),
+        re.compile(
+            r"(?im)^[^\n]*(?:api[_-]?key|token|secret|password)\s*[:=][^\n]*$"
+        ),
     ),
     (
         "private_key",

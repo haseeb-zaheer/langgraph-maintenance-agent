@@ -7,6 +7,8 @@ import pytest
 
 from langgraph_maintenance_agent.config import AppConfig, ConfigError, RepoConfig
 from langgraph_maintenance_agent.graph import (
+    redact_report_node,
+    redact_structured_state_node,
     render_markdown_node,
     run_workflow,
     summarize_with_agent_node,
@@ -152,12 +154,62 @@ def test_command_result_rendering_is_redacted(tmp_path: Path) -> None:
     }
 
     rendered = render_markdown_node(state)
-    from langgraph_maintenance_agent.graph import redact_report_node
-
     report = redact_report_node(rendered)["report_markdown"] or ""
 
     assert "secret-token" not in report
     assert REDACTION_MARKER in report
+
+
+def test_structured_redaction_preserves_schema_with_secret_lines(
+    tmp_path: Path,
+) -> None:
+    secret = "password=hunter2"
+    state: AgentState = {
+        "repo_results": [],
+        "findings": [
+            Finding(
+                repo_name="demo",
+                severity=Severity.HIGH,
+                category=FindingCategory.SECURITY,
+                title="Secret line",
+                description=secret,
+            )
+        ],
+        "skipped_checks": [],
+        "errors": [],
+        "redaction_count": 0,
+        "redaction_counts_by_type": {},
+    }
+
+    result = redact_structured_state_node(state)
+
+    assert result["findings"][0].description == REDACTION_MARKER
+    assert result["redaction_count"] == 1
+
+
+def test_final_report_redaction_adds_warning_for_summary_secret(
+    tmp_path: Path,
+) -> None:
+    state: AgentState = {
+        "selected_repos": [RepoConfig(name="demo", path=tmp_path, enabled=True)],
+        "repo_results": [RepoResult(repo_name="demo", path=str(tmp_path))],
+        "findings": [],
+        "skipped_checks": [],
+        "errors": [],
+        "summary": "summary contains token=abc123",
+        "next_actions": [],
+        "run_id": "test",
+        "started_at": "2026-05-30T00:00:00+00:00",
+        "dry_run": True,
+        "redaction_count": 0,
+        "redaction_counts_by_type": {},
+    }
+
+    rendered = render_markdown_node(state)
+    report = redact_report_node(rendered)["report_markdown"] or ""
+
+    assert "token=abc123" not in report
+    assert "Redaction warning:" in report
 
 
 def test_discord_chunking_preserves_content() -> None:
