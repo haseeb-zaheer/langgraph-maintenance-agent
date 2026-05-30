@@ -3,10 +3,11 @@
 Public-safe portfolio implementation of a scheduled, report-only repository
 maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
-Batch 1 is complete. It built the Python package foundation, configuration
-validation, typed schemas, and reusable runtime helpers. The remaining batches
-will add safe repository tools, OpenRouter-backed repo inspector agents,
-LangGraph orchestration, reporting, Discord delivery, and systemd scheduling.
+Batch 2 is complete. The project now includes a repo-scoped safe tool registry,
+OpenRouter chat-completions client, structured repo inspector contracts, and a
+sequential LangGraph workflow with a deterministic no-LLM demo mode. Later
+batches will polish report rendering/redaction, Discord delivery, safe command
+execution, parallel fan-out, and systemd scheduling.
 
 ## Safety Model
 
@@ -34,8 +35,30 @@ Validate the public-safe example config:
 uv run langgraph-maintenance validate-config examples/repos.yaml
 ```
 
-Batch 1 currently provides config validation, typed schemas, and runtime helper
-tests. Tool-using repository inspector agents start in a later phase.
+Run the public-safe dry-run demo without credentials:
+
+```bash
+uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run
+```
+
+Run with OpenRouter-backed tool-using repo inspectors:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-placeholder"
+export LANGGRAPH_MAINTENANCE_LLM_MODEL="openrouter/model-placeholder"
+uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider openrouter
+```
+
+`--dry-run` performs checks and renders report content in memory, but it does
+not write report files or send Discord messages.
+
+## Agent Tools
+
+Repo inspector agents can call only registered tools that accept `repo_name`.
+They cannot pass arbitrary filesystem roots or shell commands. Available tools
+include `git_status`, `latest_commit`, `list_files`, `read_safe_file`,
+`search_static_markers`, `detect_dependency_manifests`, and a skipped
+`run_configured_safe_command` stub reserved for the command-execution batch.
 
 ## Source Of Truth
 

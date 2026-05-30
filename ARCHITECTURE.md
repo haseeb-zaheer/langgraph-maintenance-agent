@@ -26,28 +26,36 @@ systemd timer / manual CLI
       -> send Discord summary
 ```
 
-## Batch 1 Boundary
+## Batch 2 Implementation
 
-Batch 1 implements only the project foundation:
+Batch 2 implements the first tool-using agent workflow:
 
-- Python package metadata and CLI skeleton.
-- Public-safe documentation and examples.
-- Config schema and validation.
-- Typed domain schemas.
-- Runtime helpers for report paths and bounded output.
+- `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
+  schemas.
+- `llm/openrouter.py` provides a direct non-streaming Chat Completions client
+  with tool-call parsing and JSON-schema response format support.
+- `agents/repo_inspector.py` runs an OpenRouter-backed tool loop or a
+  deterministic no-LLM fallback.
+- `graph.py` assembles the sequential supervisor workflow:
+  `load_config -> prepare_run -> select_repos -> build_tool_registry ->
+  inspect_repo_agent -> normalize_agent_output -> merge_results ->
+  summarize_with_agent -> render_markdown -> redact_report -> write_report`.
 
-Batch 1 does not implement repository tools, repo inspector agents, safe command
-execution, Discord delivery, systemd scheduling, OpenRouter calls, or parallel
-graph execution.
+## Remaining Boundary
+
+Later batches still own production report polish, full regex redaction,
+configured safe command execution, Discord delivery, parallel fan-out, wrapper
+scripts, and the systemd timer.
 
 ## Agent Safety Boundary
 
-Repo inspector agents will not receive raw shell access. They will call a
-registry of constrained tools such as `git_status`, `list_files`,
-`read_safe_file`, `search_static_markers`, `detect_dependency_manifests`, and
+Repo inspector agents do not receive raw shell access. They call a registry of
+constrained tools such as `git_status`, `list_files`, `read_safe_file`,
+`search_static_markers`, `detect_dependency_manifests`, and
 `run_configured_safe_command`. Tools resolve repo names through validated config,
-block sensitive paths, bound outputs, and redact before content is stored or
-sent back to the model.
+block sensitive paths, bound outputs, and redact before content is stored or sent
+back to the model. `run_configured_safe_command` currently returns a skipped
+result until Phase 7 implements execution mechanics.
 
 ## Source Of Truth
 

@@ -840,72 +840,72 @@ This phase creates the agent's tool surface but does not call an LLM yet.
 
 Deliverables:
 
-- [ ] Create `tools/` package with repo-scoped tool modules and registry.
-- [ ] Implement `ToolContext` containing validated config, repo map, timeouts,
+- [x] Create `tools/` package with repo-scoped tool modules and registry.
+- [x] Implement `ToolContext` containing validated config, repo map, timeouts,
       output limits, and redaction hooks.
-- [ ] Implement tool result schemas for success, skipped, and error outcomes.
-- [ ] Implement `git_status(repo_name)`:
+- [x] Implement tool result schemas for success, skipped, and error outcomes.
+- [x] Implement `git_status(repo_name)`:
       - path existence
       - git repo detection
       - branch
       - latest status summary
       - dirty/untracked summary
       - ahead/behind when available
-- [ ] Implement `latest_commit(repo_name)`:
+- [x] Implement `latest_commit(repo_name)`:
       - hash
       - date
       - subject
       - graceful non-git handling
-- [ ] Implement `list_files(repo_name, patterns=None)`:
+- [x] Implement `list_files(repo_name, patterns=None)`:
       - public-safe relative paths only
       - configurable max file count
       - excludes sensitive paths and ignored runtime directories
-- [ ] Implement `read_safe_file(repo_name, relative_path)`:
+- [x] Implement `read_safe_file(repo_name, relative_path)`:
       - allow only safe docs/manifests/source snippets needed for inspection
       - reject path traversal
       - reject `.env`, logs, databases, private keys, raw reports, binary files,
         and oversized files
       - return bounded, redacted content
-- [ ] Implement `search_static_markers(repo_name)`:
+- [x] Implement `search_static_markers(repo_name)`:
       - TODO/FIXME/HACK search
       - bounded path/line summaries
       - no sensitive file reads
-- [ ] Implement `detect_dependency_manifests(repo_name)`:
+- [x] Implement `detect_dependency_manifests(repo_name)`:
       - Python: `pyproject.toml`, `requirements*.txt`, `uv.lock`,
         `poetry.lock`
       - Node: `package.json`, lockfiles
       - Docker: `Dockerfile`, `compose.yaml`, `docker-compose.yml`
       - dbt: `dbt_project.yml`
-- [ ] Implement `run_configured_safe_command(repo_name, command_label)` as a
+- [x] Implement `run_configured_safe_command(repo_name, command_label)` as a
       stub that returns skipped until Phase 7 command execution is implemented.
-- [ ] Ensure every tool accepts a repo name and never arbitrary raw root paths.
-- [ ] Ensure every tool output is bounded and redacted before state/model use.
-- [ ] Convert tool outputs into structures reusable by agent prompts and
+- [x] Ensure every tool accepts a repo name and never arbitrary raw root paths.
+- [x] Ensure every tool output is bounded and redacted before state/model use.
+- [x] Convert tool outputs into structures reusable by agent prompts and
       deterministic fallback tests.
 
 Tests:
 
-- [ ] Temporary non-git directory is reported correctly.
-- [ ] Temporary git repo with clean state is reported correctly.
-- [ ] Temporary git repo with dirty state is reported correctly.
-- [ ] `list_files` excludes sensitive paths.
-- [ ] `read_safe_file` reads safe docs/manifests.
-- [ ] `read_safe_file` rejects `.env`, logs, private keys, path traversal, and
+- [x] Temporary non-git directory is reported correctly.
+- [x] Temporary git repo with clean state is reported correctly.
+- [x] Temporary git repo with dirty state is reported correctly.
+- [x] `list_files` excludes sensitive paths.
+- [x] `read_safe_file` reads safe docs/manifests.
+- [x] `read_safe_file` rejects `.env`, logs, private keys, path traversal, and
       oversized files.
-- [ ] Dependency manifest detection works for synthetic files.
-- [ ] Static marker scan finds TODO/FIXME/HACK without reading ignored secrets.
-- [ ] Tool outputs are bounded and redacted.
-- [ ] Unknown repo names are rejected.
-- [ ] Command tool returns skipped before Phase 7.
+- [x] Dependency manifest detection works for synthetic files.
+- [x] Static marker scan finds TODO/FIXME/HACK without reading ignored secrets.
+- [x] Tool outputs are bounded and redacted.
+- [x] Unknown repo names are rejected.
+- [x] Command tool returns skipped before Phase 7.
 
 Validation:
 
-- [ ] Tests create only temporary synthetic repositories.
-- [ ] No test fixture contains private paths or secrets.
+- [x] Tests create only temporary synthetic repositories.
+- [x] No test fixture contains private paths or secrets.
 
 Exit criteria:
 
-- [ ] The project exposes a safe, tested tool layer that an LLM agent can call.
+- [x] The project exposes a safe, tested tool layer that an LLM agent can call.
 
 ### Phase 5: OpenRouter Model Client And Agent Contracts
 
@@ -914,12 +914,12 @@ contracts without yet wiring the full LangGraph workflow.
 
 Deliverables:
 
-- [ ] Add OpenRouter client module under `llm/openrouter.py`.
-- [ ] Use environment variable `OPENROUTER_API_KEY`; never read it from config.
-- [ ] Use `LANGGRAPH_MAINTENANCE_LLM_MODEL` for the default model override.
-- [ ] Document an example model placeholder, not a real private preference.
-- [ ] Add provider/model fields to runtime state and run metadata.
-- [ ] Define structured output schema for repo inspector agent:
+- [x] Add OpenRouter client module under `llm/openrouter.py`.
+- [x] Use environment variable `OPENROUTER_API_KEY`; never read it from config.
+- [x] Use `LANGGRAPH_MAINTENANCE_LLM_MODEL` for the default model override.
+- [x] Document an example model placeholder, not a real private preference.
+- [x] Add provider/model fields to runtime state and run metadata.
+- [x] Define structured output schema for repo inspector agent:
       - repo identity
       - checks attempted
       - tool calls used
@@ -929,41 +929,41 @@ Deliverables:
       - dependency notes
       - incomplete checks
       - confidence/needs human review flags
-- [ ] Define structured output schema for summary agent:
+- [x] Define structured output schema for summary agent:
       - executive summary
       - critical/high/medium/low highlights
       - suggested next actions
       - auditor limitations
-- [ ] Add repo inspector prompt:
+- [x] Add repo inspector prompt:
       - must use only supplied tools
       - must not request arbitrary shell/file access
       - must not ask tools for secrets
       - must return structured output
-- [ ] Add summary prompt:
+- [x] Add summary prompt:
       - takes redacted structured findings only
       - does not invent commands or findings
-- [ ] Add no-LLM deterministic fallback contracts for tests and demos.
-- [ ] Use mocks/fakes for all model tests; public tests must not require
+- [x] Add no-LLM deterministic fallback contracts for tests and demos.
+- [x] Use mocks/fakes for all model tests; public tests must not require
       OpenRouter credentials.
 
 Tests:
 
-- [ ] Missing `OPENROUTER_API_KEY` in LLM mode fails clearly.
-- [ ] No-LLM mode does not require or read `OPENROUTER_API_KEY`.
-- [ ] Model name is loaded from env override when set.
-- [ ] Repo inspector structured output validates.
-- [ ] Summary structured output validates.
-- [ ] Malformed model output becomes an incomplete agent result.
-- [ ] Prompts do not contain private examples or raw local paths.
+- [x] Missing `OPENROUTER_API_KEY` in LLM mode fails clearly.
+- [x] No-LLM mode does not require or read `OPENROUTER_API_KEY`.
+- [x] Model name is loaded from env override when set.
+- [x] Repo inspector structured output validates.
+- [x] Summary structured output validates.
+- [x] Malformed model output becomes an incomplete agent result.
+- [x] Prompts do not contain private examples or raw local paths.
 
 Validation:
 
-- [ ] Unit tests use mocked model responses only.
-- [ ] Public demo still works without API keys.
+- [x] Unit tests use mocked model responses only.
+- [x] Public demo still works without API keys.
 
 Exit criteria:
 
-- [ ] The project can instantiate OpenRouter-backed agent contracts safely, and
+- [x] The project can instantiate OpenRouter-backed agent contracts safely, and
       tests can validate agent behavior without real network/model calls.
 
 ### Phase 6: LangGraph Sequential Tool-Using Agent Workflow
@@ -974,61 +974,61 @@ workflow. This phase creates the core agentic MVP.
 
 Deliverables:
 
-- [ ] Implement graph builder in `graph.py`.
-- [ ] Implement `load_config` node.
-- [ ] Implement `prepare_run` node.
-- [ ] Implement `select_repos` node.
-- [ ] Implement `build_tool_registry` node.
-- [ ] Implement sequential `inspect_repo_agent` node or loop.
-- [ ] Repo inspector agent must use only registered tools.
-- [ ] Enforce max tool calls / max iterations per repo.
-- [ ] Implement `normalize_agent_output` node.
-- [ ] Implement `merge_results` node.
-- [ ] Implement `summarize_with_agent` node.
-- [ ] Implement deterministic summary fallback for `--no-llm`.
-- [ ] Implement `redact_report` node.
-- [ ] Implement `render_markdown` node.
-- [ ] Implement `write_report` node.
-- [ ] Implement `handle_failure` path.
-- [ ] Ensure graph state is serializable for tests.
-- [ ] Ensure one repository failure becomes a finding/incomplete result when
+- [x] Implement graph builder in `graph.py`.
+- [x] Implement `load_config` node.
+- [x] Implement `prepare_run` node.
+- [x] Implement `select_repos` node.
+- [x] Implement `build_tool_registry` node.
+- [x] Implement sequential `inspect_repo_agent` node or loop.
+- [x] Repo inspector agent must use only registered tools.
+- [x] Enforce max tool calls / max iterations per repo.
+- [x] Implement `normalize_agent_output` node.
+- [x] Implement `merge_results` node.
+- [x] Implement `summarize_with_agent` node.
+- [x] Implement deterministic summary fallback for `--no-llm`.
+- [x] Implement `redact_report` node.
+- [x] Implement `render_markdown` node.
+- [x] Implement `write_report` node.
+- [x] Implement `handle_failure` path.
+- [x] Ensure graph state is serializable for tests.
+- [x] Ensure one repository failure becomes a finding/incomplete result when
       possible instead of crashing the whole run.
-- [ ] Implement CLI:
+- [x] Implement CLI:
       `langgraph-maintenance run --config examples/repos.yaml --no-llm`.
-- [ ] Implement CLI:
+- [x] Implement CLI:
       `langgraph-maintenance run --config <config> --llm --provider openrouter`.
-- [ ] Add `--output-dir` option.
-- [ ] Add `--dry-run` option that performs checks and renders output without
+- [x] Add `--output-dir` option.
+- [x] Add `--dry-run` option that performs checks and renders output without
       writing report files.
-- [ ] Ensure dry-run never sends Discord or writes reports.
+- [x] Ensure dry-run never sends Discord or writes reports.
 
 Tests:
 
-- [ ] Workflow smoke test with one synthetic repo.
-- [ ] Workflow smoke test with two synthetic repos.
-- [ ] Workflow continues when one repo path is missing.
-- [ ] Workflow writes latest report.
-- [ ] Workflow dry run does not write files.
-- [ ] Workflow no-LLM mode requires no API key.
-- [ ] Workflow LLM mode uses mocked OpenRouter client.
-- [ ] Agent cannot call unregistered tools.
-- [ ] Agent tool-call limit produces incomplete check record.
-- [ ] Malformed agent output produces validation error and fallback/incomplete
+- [x] Workflow smoke test with one synthetic repo.
+- [x] Workflow smoke test with two synthetic repos.
+- [x] Workflow continues when one repo path is missing.
+- [x] Workflow writes latest report.
+- [x] Workflow dry run does not write files.
+- [x] Workflow no-LLM mode requires no API key.
+- [x] Workflow LLM mode uses mocked OpenRouter client.
+- [x] Agent cannot call unregistered tools.
+- [x] Agent tool-call limit produces incomplete check record.
+- [x] Malformed agent output produces validation error and fallback/incomplete
       record.
-- [ ] Fatal config failure writes/returns a useful failure result.
+- [x] Fatal config failure writes/returns a useful failure result.
 
 Validation:
 
-- [ ] `langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run`
+- [x] `langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run`
       works.
-- [ ] `langgraph-maintenance run --config <temp-config> --no-llm` writes a
+- [x] `langgraph-maintenance run --config <temp-config> --no-llm` writes a
       report.
-- [ ] Mocked LLM workflow test proves repo inspector agent uses tools.
-- [ ] `python -m pytest` passes.
+- [x] Mocked LLM workflow test proves repo inspector agent uses tools.
+- [x] `python -m pytest` passes.
 
 Exit criteria:
 
-- [ ] This is the core MVP. The project is now a real tool-using LangGraph agent
+- [x] This is the core MVP. The project is now a real tool-using LangGraph agent
       app.
 
 ### Phase 7: Safe Command Tool Execution
