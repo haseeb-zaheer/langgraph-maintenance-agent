@@ -188,8 +188,12 @@ Before accepting source-review findings, deterministic code should verify:
 - every finding has a suggested action
 - sensitive-looking content is redacted
 
-Unsupported findings should be rejected or converted into incomplete-review
-errors.
+The final source-review model call uses a strict source-only structured output
+schema. If the model omits required evidence, returns malformed JSON, or cites
+unread evidence, the workflow makes one repair attempt using only the validation
+error, allowed paths, and redacted rejected output. Repair does not call source
+read tools again or expand the allowed evidence set. Unsupported findings that
+still fail validation become incomplete-review errors.
 
 ## 11. Agent Merges Repo Results
 
@@ -226,6 +230,8 @@ Source review coverage:
 - Bytes read: 42 KB / 80 KB
 - Generated files skipped: 312
 - Source review mode: LLM semantic
+- Validation status: repaired
+- Repair attempted: true
 ```
 
 ## 13. Agent Writes The Local Report

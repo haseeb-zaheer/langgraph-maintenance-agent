@@ -47,14 +47,19 @@ Source-review checks use a deterministic staged workflow:
 3. ask the model for a structured `SourceReviewPlan`
 4. validate planned paths against approved candidates
 5. batch-read only planned files through `read_source_files`
-6. ask the model for source findings from the validated plan and read evidence
-7. reject findings that cite unread or unapproved evidence paths
+6. ask the model for strict source-review findings from the validated plan and
+   read evidence
+7. make one repair attempt if the output is malformed, missing required
+   evidence, or cites unread evidence
+8. reject findings that still cite unread or unapproved evidence paths
 
 Source-review findings must use `bug-risk`, `refactor`, `code-quality`, or
-`test-gap`, cite evidence paths, and include suggested human actions. Test-gap
-findings may cite source-tree/test-root metadata; other source findings must
-cite files that were actually read. No-LLM mode records semantic source review
-as skipped instead of fabricating findings.
+`test-gap`, cite non-empty evidence paths, and include non-empty suggested
+human actions. Test-gap findings may cite source-tree/test-root metadata; other
+source findings must cite files that were actually read. Repair prompts include
+only the validation error, allowed paths, and redacted rejected output; they do
+not request shell access, arbitrary files, or additional source reads. No-LLM
+mode records semantic source review as skipped instead of fabricating findings.
 
 Candidate ranking is heuristic. It prioritizes Next.js API routes and route
 handlers, auth, rate-limit, request/response, environment, fetch/network,

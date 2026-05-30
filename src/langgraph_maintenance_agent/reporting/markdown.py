@@ -425,8 +425,12 @@ def _render_source_review_coverage(repo_results: list[RepoResult]) -> list[str]:
                 f"- Skipped planned files: {coverage.skipped_files}",
                 f"- Generated files skipped: {coverage.generated_files_skipped}",
                 f"- Review mode: `{coverage.review_mode}`",
+                f"- Validation status: `{coverage.validation_status}`",
+                f"- Repair attempted: `{coverage.repair_attempted}`",
             ]
         )
+        if coverage.validation_error:
+            lines.append(f"- Validation error: {coverage.validation_error}")
         if coverage.plan_rationale:
             lines.append(f"- Plan rationale: {coverage.plan_rationale}")
         if coverage.planned:

@@ -40,10 +40,14 @@ caches, vendored directories, minified bundles, logs, databases, raw reports,
 and private key material. These exclusions are mandatory in the current phase.
 
 Semantic bug/refactor/test-gap review requires LLM mode. Findings are accepted
-only when they use approved source-review categories, include a suggested human
-action, and cite read evidence paths. Test-gap findings may cite source-tree or
-test-root metadata. In no-LLM mode, source review is marked skipped/incomplete
-rather than pretending deterministic tools understood code behavior.
+only when they pass the strict source-review output schema, use approved
+source-review categories, include a suggested human action, and cite read
+evidence paths. Test-gap findings may cite source-tree or test-root metadata.
+If the model output is malformed or cites invalid evidence, the workflow makes
+one repair attempt using only the existing read evidence and redacted rejected
+output. Repair does not read more files or loosen path validation. In no-LLM
+mode, source review is marked skipped/incomplete rather than pretending
+deterministic tools understood code behavior.
 
 ## Configured Commands
 

@@ -168,9 +168,12 @@ Candidate ranking prioritizes Next.js API routes, route handlers, auth,
 rate-limit, request/response, environment, network, filesystem, sitemap,
 robots, and runtime glue files. Reports include a `Source Review Coverage`
 section with candidate, planned, read, skipped, generated-skip, byte, mode, and
-plan-rationale metadata. Reports cite concise evidence paths and suggested
-human actions, never raw source dumps. The agent still never edits target
-repositories.
+plan-rationale metadata. The final source-review LLM call uses a strict
+source-only structured output schema and gets one repair retry if the model
+omits required evidence or cites an unread file. Repair can only use the
+already-read files and allowed metadata; it never expands source access.
+Reports cite concise evidence paths and suggested human actions, never raw
+source dumps. The agent still never edits target repositories.
 
 ## Scheduled Runtime
 

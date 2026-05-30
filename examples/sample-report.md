@@ -61,6 +61,8 @@ None found.
 - Skipped planned files: 0
 - Generated files skipped: 3
 - Review mode: `llm-planned`
+- Validation status: `accepted`
+- Repair attempted: `False`
 - Plan rationale: Synthetic API and parser files were highest-signal examples.
 - Planned paths: `src/api.py`, `src/parser.py`
 - Read paths: `src/api.py`, `src/parser.py`
