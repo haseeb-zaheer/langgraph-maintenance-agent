@@ -656,13 +656,13 @@ tests before wiring the graph.
 
 Deliverables:
 
-- [ ] Implement severity enum:
+- [x] Implement severity enum:
       - `critical`
       - `high`
       - `medium`
       - `low`
       - optional `info`
-- [ ] Implement finding category enum:
+- [x] Implement finding category enum:
       - `security`
       - `dependency`
       - `test`
@@ -672,7 +672,7 @@ Deliverables:
       - `static`
       - `runtime`
       - `configuration`
-- [ ] Implement `Finding` schema with:
+- [x] Implement `Finding` schema with:
       - id or fingerprint
       - repo name
       - severity
@@ -683,7 +683,7 @@ Deliverables:
       - command reference if applicable
       - suggested action
       - needs human review flag
-- [ ] Implement `CommandResult` schema with:
+- [x] Implement `CommandResult` schema with:
       - command label
       - command string or argv
       - working directory
@@ -692,29 +692,29 @@ Deliverables:
       - bounded stdout excerpt
       - bounded stderr excerpt
       - started/ended timestamps or duration
-- [ ] Implement `SkippedCheck` schema.
-- [ ] Implement `RepoResult` schema.
-- [ ] Implement `DeliveryStatus` schema.
-- [ ] Implement `AgentError` schema.
-- [ ] Implement `AgentState` using `TypedDict` or Pydantic-compatible state.
-- [ ] Implement deterministic finding fingerprinting for dedupe.
+- [x] Implement `SkippedCheck` schema.
+- [x] Implement `RepoResult` schema.
+- [x] Implement `DeliveryStatus` schema.
+- [x] Implement `AgentError` schema.
+- [x] Implement `AgentState` using `TypedDict` or Pydantic-compatible state.
+- [x] Implement deterministic finding fingerprinting for dedupe.
 - [ ] Implement runtime path helpers for report names:
       `YYYY-MM-DD-routine-maintenance.md` and timestamp fallback.
 - [ ] Implement bounded text helpers for command output excerpts.
 
 Tests:
 
-- [ ] Finding serialization round trip.
-- [ ] Fingerprints are stable for equivalent findings.
-- [ ] Fingerprints differ for meaningfully different findings.
+- [x] Finding serialization round trip.
+- [x] Fingerprints are stable for equivalent findings.
+- [x] Fingerprints differ for meaningfully different findings.
 - [ ] Command output excerpts are bounded.
 - [ ] Report path helper avoids overwriting existing date report.
-- [ ] Agent state can be serialized to JSON-safe structures.
+- [x] Agent state can be serialized to JSON-safe structures.
 
 Validation:
 
-- [ ] Unit tests pass.
-- [ ] Type checker passes if configured.
+- [x] Unit tests pass.
+- [x] Type checker passes if configured.
 
 Exit criteria:
 
