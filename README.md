@@ -3,12 +3,11 @@
 Public-safe portfolio implementation of a scheduled, report-only repository
 maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
-Batch 3 is complete. The project now includes a repo-scoped safe tool registry,
-OpenRouter chat-completions client, structured repo inspector contracts, bounded
-configured command execution, and a sequential LangGraph workflow with a
-deterministic no-LLM demo mode. Reports receive minimum secret redaction before
-local writes. Later batches will polish report sections/redaction metadata,
-Discord delivery, parallel fan-out, and systemd scheduling.
+Phases 8 and 9 are complete. The project includes a repo-scoped safe tool
+registry, OpenRouter chat-completions client, structured repo inspector and
+summary contracts, bounded configured command execution, polished redacted
+Markdown reports, fresh failure reports, and optional Discord webhook delivery.
+Later batches will add parallel fan-out and systemd scheduling.
 
 ## Safety Model
 
@@ -63,10 +62,22 @@ workflow requests tool use instead of trusting unevidenced output.
 `--dry-run` performs checks and renders report content in memory, but it does
 not write report files or send Discord messages.
 
-Discord delivery is planned for a later phase and will be disabled by default.
-When implemented, users will be able to enable it in config or override it per
-run with CLI flags. Long Discord reports must be split into multiple webhook
-messages because Discord message content is limited to 2,000 characters.
+Reports are written to a date-based Markdown file and copied to
+`reports/latest.md` on successful non-dry runs. Fatal config/runtime failures
+write a fresh timestamped failure report and do not replace or send stale
+`latest.md`.
+
+Discord delivery is opt-in and disabled by default. Set a webhook in the
+environment, then enable it in config with `report.discord_enabled: true` or
+force a single run with `--send-discord`. Use `--no-discord` to suppress config
+delivery. Long reports are split into numbered webhook messages below
+Discord's 2,000-character `content` limit.
+
+```bash
+export LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL="<discord webhook url>"
+uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --send-discord --summary-only
+uv run langgraph-maintenance send reports/latest.md --summary-only
+```
 
 ## Safe Commands
 

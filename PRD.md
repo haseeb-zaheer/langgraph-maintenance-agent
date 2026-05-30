@@ -352,7 +352,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Support optional report settings.
 - [x] Support model secrets only through environment variables, never config
       files.
-- [ ] Support Discord delivery enable/disable through config and CLI flags,
+- [x] Support Discord delivery enable/disable through config and CLI flags,
       defaulting to disabled.
 - [ ] Validate that repo paths are absolute or intentionally relative to a safe
       base directory.
@@ -373,32 +373,32 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Include findings.
 - [x] Include skipped checks.
 - [x] Include command execution summaries.
-- [ ] Include redaction warnings.
+- [x] Include redaction warnings.
 - [x] Include final report content.
 - [x] Include delivery status.
 - [x] Include fatal errors and partial failures.
 - [ ] Include agent/tool-call history with bounded redacted outputs.
 - [ ] Include model provider and model name used for each agent run.
-- [ ] Include incomplete agent runs and tool failures.
+- [x] Include incomplete agent runs and tool failures.
 - [x] Ensure state is serializable for debugging and tests.
 
 ### Workflow Nodes
 
-- [ ] `load_config`: read and validate allowlist config.
-- [ ] `prepare_run`: create run id, output paths, and runtime context.
-- [ ] `select_repos`: filter enabled repositories.
-- [ ] `build_tool_registry`: create repo-scoped safe tools for enabled repos.
-- [ ] `inspect_repo_agent`: run an LLM repo inspector agent with safe tools.
-- [ ] `normalize_agent_output`: validate structured agent output into findings,
+- [x] `load_config`: read and validate allowlist config.
+- [x] `prepare_run`: create run id, output paths, and runtime context.
+- [x] `select_repos`: filter enabled repositories.
+- [x] `build_tool_registry`: create repo-scoped safe tools for enabled repos.
+- [x] `inspect_repo_agent`: run an LLM repo inspector agent with safe tools.
+- [x] `normalize_agent_output`: validate structured agent output into findings,
       skipped checks, command summaries, and errors.
-- [ ] `merge_results`: dedupe and group findings.
-- [ ] `summarize_with_agent`: produce executive summary and suggested next
+- [x] `merge_results`: dedupe and group findings.
+- [x] `summarize_with_agent`: produce executive summary and suggested next
       actions from structured findings.
-- [ ] `redact_report`: remove secret patterns and unsafe values.
-- [ ] `render_markdown`: create the local full report.
-- [ ] `write_report`: persist report and latest pointer/copy.
-- [ ] `send_discord_summary`: send safe summary or full chunks based on settings.
-- [ ] `handle_failure`: write a fresh failure report if the workflow fails.
+- [x] `redact_report`: remove secret patterns and unsafe values.
+- [x] `render_markdown`: create the local full report.
+- [x] `write_report`: persist report and latest pointer/copy.
+- [x] `send_discord_summary`: send safe summary or full chunks based on settings.
+- [x] `handle_failure`: write a fresh failure report if the workflow fails.
 
 ### Graph Routing
 
@@ -408,9 +408,9 @@ The safety boundary must be enforced in code, not only prompts:
 - [ ] Route agent iteration/tool-call limits to incomplete check records.
 - [ ] Route malformed structured agent output to validation errors and
       deterministic fallback where possible.
-- [ ] Route redaction hits to a warning section without exposing values.
-- [ ] Route fatal configuration errors to a local failure report.
-- [ ] Ensure failed runs never send stale previous reports.
+- [x] Route redaction hits to a warning section without exposing values.
+- [x] Route fatal configuration errors to a local failure report.
+- [x] Ensure failed runs never send stale previous reports.
 
 ### Agent Tools And Command Execution
 
@@ -459,58 +459,58 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Agent And LLM Usage
 
-- [ ] Use OpenRouter as the preferred provider.
-- [ ] Load `OPENROUTER_API_KEY` from environment only.
-- [ ] Load model name from `LANGGRAPH_MAINTENANCE_LLM_MODEL`, with a documented
+- [x] Use OpenRouter as the preferred provider.
+- [x] Load `OPENROUTER_API_KEY` from environment only.
+- [x] Load model name from `LANGGRAPH_MAINTENANCE_LLM_MODEL`, with a documented
       safe default placeholder.
-- [ ] Use LLM agents for repo inspection and report summarization.
-- [ ] Use deterministic Python for config parsing, tool safety, command
+- [x] Use LLM agents for repo inspection and report summarization.
+- [x] Use deterministic Python for config parsing, tool safety, command
       execution mechanics, redaction, and report writing.
-- [ ] Require structured output from repo inspector agents.
-- [ ] Require structured output from summary agent.
-- [ ] Add prompt templates under `src/.../prompts/` or `prompts/`.
+- [x] Require structured output from repo inspector agents.
+- [x] Require structured output from summary agent.
+- [x] Add prompt templates under `src/.../prompts/` or `prompts/`.
 - [ ] Keep prompts public-safe and free of private examples.
 - [ ] Add tests or golden fixtures for prompt inputs/outputs where practical.
-- [ ] Support a no-LLM deterministic fallback mode for tests and public demos.
-- [ ] Add mocked model tests for tool-call and structured-output flows.
+- [x] Support a no-LLM deterministic fallback mode for tests and public demos.
+- [x] Add mocked model tests for tool-call and structured-output flows.
 
 ### Report Format
 
-- [ ] Generate `reports/YYYY-MM-DD-routine-maintenance.md`.
-- [ ] Generate a timestamped filename if the date report already exists.
-- [ ] Update `reports/latest.md`.
-- [ ] Include executive summary.
-- [ ] Include critical findings.
-- [ ] Include high priority findings.
-- [ ] Include medium priority findings.
-- [ ] Include low priority findings.
-- [ ] Include repositories scanned.
-- [ ] Include repositories skipped.
-- [ ] Include dependency concerns.
-- [ ] Include test/lint/build results.
-- [ ] Include dirty worktrees.
-- [ ] Include suggested next actions.
-- [ ] Include appendix with per-repo details.
-- [ ] Include commands run and exit statuses.
-- [ ] Include skipped checks and reasons.
-- [ ] Include auditor failures or incomplete checks.
-- [ ] Use `None found.` for empty severity sections.
+- [x] Generate `reports/YYYY-MM-DD-routine-maintenance.md`.
+- [x] Generate a timestamped filename if the date report already exists.
+- [x] Update `reports/latest.md`.
+- [x] Include executive summary.
+- [x] Include critical findings.
+- [x] Include high priority findings.
+- [x] Include medium priority findings.
+- [x] Include low priority findings.
+- [x] Include repositories scanned.
+- [x] Include repositories skipped.
+- [x] Include dependency concerns.
+- [x] Include test/lint/build results.
+- [x] Include dirty worktrees.
+- [x] Include suggested next actions.
+- [x] Include appendix with per-repo details.
+- [x] Include commands run and exit statuses.
+- [x] Include skipped checks and reasons.
+- [x] Include auditor failures or incomplete checks.
+- [x] Use `None found.` for empty severity sections.
 
 ### Discord Delivery
 
-- [ ] Load webhook from environment only.
+- [x] Load webhook from environment only.
 - [ ] Support `.env` locally without committing it.
-- [ ] Prefer a routine-specific env var such as
+- [x] Prefer a routine-specific env var such as
       `LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL`.
-- [ ] Support optional fallback `DISCORD_WEBHOOK_URL`.
-- [ ] Redact report before sending.
-- [ ] Extract a short summary for Discord.
-- [ ] Split long messages into multiple Discord messages with each `content`
+- [x] Support optional fallback `DISCORD_WEBHOOK_URL`.
+- [x] Redact report before sending.
+- [x] Extract a short summary for Discord.
+- [x] Split long messages into multiple Discord messages with each `content`
       payload below Discord's 2,000-character message limit.
-- [ ] Handle HTTP failures clearly.
-- [ ] Never print the webhook URL.
-- [ ] Add `--summary-only` option.
-- [ ] Add tests for chunking and redaction.
+- [x] Handle HTTP failures clearly.
+- [x] Never print the webhook URL.
+- [x] Add `--summary-only` option.
+- [x] Add tests for chunking and redaction.
 
 ### Scheduling
 
@@ -571,7 +571,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [ ] `langgraph-maintenance send reports/latest.md`.
 - [ ] `langgraph-maintenance validate-config config/repos.yaml`.
 - [ ] `langgraph-maintenance render-sample-report`.
-- [ ] Support `--summary-only`.
+- [x] Support `--summary-only`.
 - [ ] Support `--dry-run`.
 - [ ] Support `--no-llm`.
 - [ ] Support configurable output directory.
@@ -1128,40 +1128,40 @@ Deliverables:
       - `## Suggested Next Actions`
       - `## Appendix: Per-Repo Details`
 - [ ] Include agent/tool-call evidence without exposing raw secrets.
-- [ ] Include commands run and exit statuses when command results exist.
-- [ ] Include skipped checks, incomplete agent runs, and auditor limitations.
-- [ ] Use `None found.` for empty severity sections.
-- [ ] Implement report writer:
+- [x] Include commands run and exit statuses when command results exist.
+- [x] Include skipped checks, incomplete agent runs, and auditor limitations.
+- [x] Use `None found.` for empty severity sections.
+- [x] Implement report writer:
       - create reports directory
       - write date report
       - avoid overwriting by using timestamp fallback
       - update `reports/latest.md`
-- [ ] Implement fresh failure report writer for fatal workflow errors.
-- [ ] Ensure failed runs never reuse stale `latest.md`.
+- [x] Implement fresh failure report writer for fatal workflow errors.
+- [x] Ensure failed runs never reuse stale `latest.md`.
 
 Tests:
 
-- [ ] Redacts webhook URL.
-- [ ] Redacts token/password/api-key lines.
-- [ ] Redacts authorization headers.
-- [ ] Redacts private key block marker content.
-- [ ] Summary agent input is redacted.
-- [ ] Markdown renderer includes all required sections.
-- [ ] Empty sections use `None found.`.
-- [ ] Report writer updates latest report.
-- [ ] Report writer avoids overwriting existing report.
-- [ ] Failure report is fresh and does not reuse stale `latest.md`.
+- [x] Redacts webhook URL.
+- [x] Redacts token/password/api-key lines.
+- [x] Redacts authorization headers.
+- [x] Redacts private key block marker content.
+- [x] Summary agent input is redacted.
+- [x] Markdown renderer includes all required sections.
+- [x] Empty sections use `None found.`.
+- [x] Report writer updates latest report.
+- [x] Report writer avoids overwriting existing report.
+- [x] Failure report is fresh and does not reuse stale `latest.md`.
 - [ ] Golden sample report test uses synthetic agent/tool data only.
 
 Validation:
 
-- [ ] Generated local report for synthetic agent output is readable and
+- [x] Generated local report for synthetic agent output is readable and
       public-safe.
 - [ ] `reports/` generated files remain ignored by git.
 
 Exit criteria:
 
-- [ ] Agentic inspection results produce polished, redacted Markdown reports.
+- [x] Agentic inspection results produce polished, redacted Markdown reports.
 
 ### Phase 9: Discord Delivery
 
@@ -1170,52 +1170,52 @@ exposing secrets or requiring Discord for the default demo.
 
 Deliverables:
 
-- [ ] Implement Discord sender using standard library or a minimal dependency.
-- [ ] Load webhook only from environment:
+- [x] Implement Discord sender using standard library or a minimal dependency.
+- [x] Load webhook only from environment:
       - `LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL`
       - fallback `DISCORD_WEBHOOK_URL`
 - [ ] Support `.env` locally without committing it.
-- [ ] Never print webhook value.
-- [ ] Respect `report.discord_enabled` as the default delivery flag.
-- [ ] Add CLI flags to override config for a run:
+- [x] Never print webhook value.
+- [x] Respect `report.discord_enabled` as the default delivery flag.
+- [x] Add CLI flags to override config for a run:
       - `--send-discord`
       - `--no-discord`
-- [ ] Extract summary sections from full report.
-- [ ] Support `--summary-only`.
-- [ ] Support safe chunking into multiple webhook messages below Discord's
+- [x] Extract summary sections from full report.
+- [x] Support `--summary-only`.
+- [x] Support safe chunking into multiple webhook messages below Discord's
       2,000-character `content` limit.
-- [ ] Include chunk numbering such as `(1/3)` when more than one Discord
+- [x] Include chunk numbering such as `(1/3)` when more than one Discord
       message is sent.
-- [ ] Redact content immediately before sending.
+- [x] Redact content immediately before sending.
 - [ ] Include a concise note when findings came from LLM agents and may need
       human review.
-- [ ] Never send raw tool histories unless they have been bounded and redacted.
-- [ ] Handle HTTP errors with clear messages.
-- [ ] Add CLI command:
+- [x] Never send raw tool histories unless they have been bounded and redacted.
+- [x] Handle HTTP errors with clear messages.
+- [x] Add CLI command:
       `langgraph-maintenance send reports/latest.md --summary-only`.
-- [ ] Add optional workflow flag to send after successful run.
+- [x] Add optional workflow flag to send after successful run.
 - [ ] Ensure failed runs send fresh failure report, not stale latest report.
 
 Tests:
 
-- [ ] Summary extraction test.
-- [ ] Chunking tests for messages above 2,000 characters, preserving all
+- [x] Summary extraction test.
+- [x] Chunking tests for messages above 2,000 characters, preserving all
       content across multiple messages.
-- [ ] Config and CLI tests for Discord enabled/disabled behavior.
-- [ ] Missing webhook error test.
-- [ ] Webhook redaction test.
-- [ ] Mock HTTP success test.
-- [ ] Mock HTTP failure test.
+- [x] Config and CLI tests for Discord enabled/disabled behavior.
+- [x] Missing webhook error test.
+- [x] Webhook redaction test.
+- [x] Mock HTTP success test.
+- [x] Mock HTTP failure test.
 - [ ] Fresh failure report send path test.
 
 Validation:
 
 - [ ] Local webhook test succeeds when `.env` is configured.
-- [ ] Public tests do not require a webhook.
+- [x] Public tests do not require a webhook.
 
 Exit criteria:
 
-- [ ] Discord delivery is production-usable but optional.
+- [x] Discord delivery is production-usable but optional.
 
 ### Phase 10: Parallel Fan-Out/Fan-In
 

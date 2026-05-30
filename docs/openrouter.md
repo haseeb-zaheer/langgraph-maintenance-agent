@@ -27,5 +27,11 @@ positioned for responsive coding and agent workflows on OpenRouter. The repo
 inspector requests required tool use until configured-check evidence has been
 collected, then accepts final structured JSON.
 
+When `--llm` is enabled, the workflow also asks a summary agent for structured
+`SummaryOutput` after repository results have been redacted. If the summary
+model call fails or returns malformed JSON, the workflow records a recoverable
+error and uses the deterministic summary fallback. `--no-llm` never calls the
+summary agent.
+
 Public tests use fakes or mocked HTTP responses and never require real
 credentials.

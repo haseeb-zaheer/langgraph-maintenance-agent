@@ -41,10 +41,18 @@ config validation. Timeouts and nonzero exits are reported for human review; the
 agent does not clean, reset, fix, upgrade, or rewrite the target repository
 after a command result.
 
-## Future Discord Delivery
+## Discord Delivery
 
-Discord delivery must remain opt-in and disabled by default. Webhook URLs must
-come from environment variables, never committed config, and must not be printed.
-Before sending, report content must be redacted and split into multiple webhook
-messages when needed so every Discord `content` payload stays below the
-2,000-character message limit.
+Discord delivery is opt-in and disabled by default. Webhook URLs come from
+environment variables, never committed config, and are not printed in CLI output
+or reports. The routine-specific
+`LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL` takes precedence over the fallback
+`DISCORD_WEBHOOK_URL`.
+
+Before sending, content is redacted again. Full-report sends are split into
+multiple webhook messages when needed so every Discord `content` payload stays
+below the 2,000-character message limit. Multi-message sends use chunk prefixes
+such as `(1/3)`.
+
+Failed runs write a fresh failure report and do not update or send stale
+`reports/latest.md`.

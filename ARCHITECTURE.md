@@ -26,10 +26,11 @@ systemd timer / manual CLI
       -> send Discord summary
 ```
 
-## Batch 3 Implementation
+## Current Implementation
 
-Batch 3 implements the first tool-using agent workflow plus bounded configured
-command execution:
+The current implementation includes the first tool-using agent workflow,
+bounded configured command execution, polished reporting, redaction metadata,
+fresh failure reports, and optional Discord delivery:
 
 - `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
   schemas.
@@ -46,16 +47,27 @@ command execution:
   `cwd`, redirect supported temp/cache paths outside the repo, enforce
   `timeout_seconds` or a 300-second default, and return bounded redacted
   stdout/stderr excerpts.
+- `reporting/markdown.py` renders structured reports with executive summary,
+  severity sections, repo scan/skipped summaries, dependency and command
+  results, dirty worktree notes, next actions, and per-repo appendix.
+- `reporting/redaction.py` redacts common secrets and returns aggregate
+  metadata so reports can warn that redaction occurred without exposing values.
+- `reporting/discord.py` sends redacted report content or compact summaries to
+  Discord webhooks loaded only from environment variables. Long messages are
+  split below Discord's 2,000-character `content` limit and prefixed with
+  chunk numbers.
 - `graph.py` assembles the sequential supervisor workflow:
   `load_config -> prepare_run -> select_repos -> build_tool_registry ->
   inspect_repo_agent -> normalize_agent_output -> merge_results ->
-  summarize_with_agent -> render_markdown -> redact_report -> write_report`.
+  redact_structured_state -> summarize_with_agent -> render_markdown ->
+  redact_report -> write_report -> send_discord_summary`.
+- Fatal workflow failures write a fresh timestamped failure report and do not
+  update `reports/latest.md`.
 
 ## Remaining Boundary
 
-Later batches still own production report polish, redaction metadata, Discord
-delivery, parallel fan-out, wrapper scripts, optional temp/cache isolation for
-commands that need writable caches, and the systemd timer.
+Later batches still own parallel fan-out, wrapper scripts, optional temp/cache
+isolation for commands that need writable caches, and the systemd timer.
 
 ## Agent Safety Boundary
 

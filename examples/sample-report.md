@@ -35,7 +35,11 @@ None found.
 
 ## Test/Lint/Build Results
 
-No configured commands were run in this synthetic sample.
+None found.
+
+## Command Results
+
+None found.
 
 ## Dirty Worktrees
 
