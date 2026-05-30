@@ -39,3 +39,7 @@ tests. End-to-end repository inspection starts in a later phase.
 
 `PRD.md` is the main implementation reference and checklist. Update it whenever
 scope, architecture, behavior, safety rules, or phase status changes.
+
+## License
+
+License selection is pending and must be finalized before public release.

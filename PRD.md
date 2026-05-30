@@ -557,7 +557,7 @@ Deliverables:
       secret redaction, and report-only behavior.
 - [x] Add `examples/repos.yaml` using synthetic paths only.
 - [x] Add `examples/sample-report.md` with synthetic findings only.
-- [ ] Add a license file or explicitly document that license selection is
+- [x] Add a license file or explicitly document that license selection is
       pending before publication.
 
 Implementation notes:
