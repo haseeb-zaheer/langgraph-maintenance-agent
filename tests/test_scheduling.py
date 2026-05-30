@@ -14,6 +14,7 @@ def test_runtime_scripts_pass_bash_syntax() -> None:
             "-n",
             "scripts/run_maintenance_check.sh",
             "scripts/run_and_send.sh",
+            "scripts/install_systemd_user_units.sh",
         ],
         cwd=ROOT,
         check=True,
@@ -21,12 +22,12 @@ def test_runtime_scripts_pass_bash_syntax() -> None:
 
 
 def test_script_failure_path_does_not_echo_secrets() -> None:
-    secret = "sk-or-test-secret-value"
+    placeholder_token = "sk-or-test-placeholder-value"
     env = {
         **os.environ,
         "LANGGRAPH_MAINTENANCE_CONFIG": "/tmp/missing-maintenance-config.yaml",
         "LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS": "30",
-        "OPENROUTER_API_KEY": secret,
+        "OPENROUTER_API_KEY": placeholder_token,
         "LANGGRAPH_MAINTENANCE_DISCORD_WEBHOOK_URL": (
             "https://discord.com/api/" + "webhooks/123/token"
         ),
@@ -43,12 +44,12 @@ def test_script_failure_path_does_not_echo_secrets() -> None:
 
     assert result.returncode != 0
     combined_output = result.stdout + result.stderr
-    assert secret not in combined_output
+    assert placeholder_token not in combined_output
     assert "discord.com/api/" + "webhooks" not in combined_output
     assert list((ROOT / "reports").glob("*-failure.md"))
 
 
-def test_systemd_units_have_expected_schedule_and_service() -> None:
+def test_systemd_units_are_template_based() -> None:
     service = (ROOT / "systemd/langgraph-maintenance-agent.service").read_text(
         encoding="utf-8"
     )
@@ -56,8 +57,22 @@ def test_systemd_units_have_expected_schedule_and_service() -> None:
         encoding="utf-8"
     )
 
-    repo_path = "/home/haseeb/repositories/langgraph_routine_maintenance_agent"
-    assert f"WorkingDirectory={repo_path}" in service
-    assert f"ExecStart={repo_path}/scripts/run_and_send.sh" in service
+    assert "WorkingDirectory={{PROJECT_DIR}}" in service
+    assert "EnvironmentFile=-{{PROJECT_DIR}}/.env" in service
+    assert "ExecStart={{PROJECT_DIR}}/scripts/run_and_send.sh" in service
+    assert "/home/haseeb/" not in service
     assert "OnCalendar=*-*-* 11:00:00" in timer
     assert "Persistent=true" in timer
+
+
+def test_systemd_install_helper_substitutes_current_clone_path() -> None:
+    install_script = ROOT / "scripts/install_systemd_user_units.sh"
+    subprocess.run(["bash", "-n", str(install_script)], cwd=ROOT, check=True)
+
+    service_template = (ROOT / "systemd/langgraph-maintenance-agent.service").read_text(
+        encoding="utf-8"
+    )
+    rendered_service = service_template.replace("{{PROJECT_DIR}}", str(ROOT))
+
+    assert f"WorkingDirectory={ROOT}" in rendered_service
+    assert f"ExecStart={ROOT}/scripts/run_and_send.sh" in rendered_service

@@ -31,8 +31,8 @@ systemd timer / manual CLI
 The current implementation includes the tool-using agent workflow, parallel
 LangGraph repo fan-out/fan-in, bounded configured command execution, polished
 reporting, redaction metadata, fresh failure reports, local runtime scripts,
-user-level systemd units, bounded LLM-backed source-code review, and optional
-Discord delivery:
+optional user-level systemd templates, bounded LLM-backed source-code review,
+and optional Discord delivery:
 
 - `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
   schemas.
@@ -86,13 +86,14 @@ Discord delivery:
   `.env` without printing values, default to no-LLM mode, enforce
   `LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS`, and write script-level failure
   reports on timeout or wrapper failure.
-- `systemd/langgraph-maintenance-agent.timer` runs the service daily at
-  11:00 AM local system time.
+- `systemd/langgraph-maintenance-agent.service` is a template rendered by
+  `scripts/install_systemd_user_units.sh` for optional Linux user scheduling.
+  The timer runs daily at 11:00 AM local system time.
 
 ## Remaining Boundary
 
-Later batches still own broader documentation polish, optional temp/cache
-isolation for commands that need writable caches, and public release prep.
+Later batches still own optional temp/cache isolation for commands that need
+writable caches and post-launch polish.
 
 ## Agent Safety Boundary
 

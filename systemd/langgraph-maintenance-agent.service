@@ -5,6 +5,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/haseeb/repositories/langgraph_routine_maintenance_agent
-EnvironmentFile=-/home/haseeb/repositories/langgraph_routine_maintenance_agent/.env
-ExecStart=/home/haseeb/repositories/langgraph_routine_maintenance_agent/scripts/run_and_send.sh
+WorkingDirectory={{PROJECT_DIR}}
+EnvironmentFile=-{{PROJECT_DIR}}/.env
+ExecStart={{PROJECT_DIR}}/scripts/run_and_send.sh
