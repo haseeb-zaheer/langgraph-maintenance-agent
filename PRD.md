@@ -1593,8 +1593,11 @@ Validation:
 - [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
 - [x] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
 - [x] Secret scan reviewed before publication.
-- [ ] Optional local LLM scan against `/home/haseeb/repositories/haseeb-web/ai-portfolio`
-      was run with a temporary config and report output kept uncommitted.
+- [x] Optional local LLM scan against `/home/haseeb/repositories/haseeb-web/ai-portfolio`
+      was run with a temporary config and report output kept uncommitted. The
+      workflow completed and wrote a local report; deterministic validation
+      correctly marked source review incomplete when the model returned a
+      source finding without evidence paths.
 
 Exit criteria:
 
