@@ -30,3 +30,52 @@ repos:
 
     assert main(["validate-config", str(config_path)]) == 0
     assert "Config valid" in capsys.readouterr().out
+
+
+def test_run_no_llm_dry_run_does_not_require_credentials(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    config_path = tmp_path / "repos.yaml"
+    config_path.write_text(
+        f"""
+repos:
+  - name: demo
+    path: {repo}
+    enabled: true
+    checks:
+      - git-status
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["run", "--config", str(config_path), "--no-llm", "--dry-run"]) == 0
+    assert "report not written" in capsys.readouterr().out
+
+
+def test_run_llm_missing_key_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config_path = tmp_path / "repos.yaml"
+    config_path.write_text(
+        f"""
+repos:
+  - name: demo
+    path: {repo}
+    enabled: true
+""",
+        encoding="utf-8",
+    )
+
+    try:
+        main(["run", "--config", str(config_path), "--llm", "--dry-run"])
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("expected SystemExit")
