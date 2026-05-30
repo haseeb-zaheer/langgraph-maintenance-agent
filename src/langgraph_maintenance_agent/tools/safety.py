@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import mimetypes
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 SENSITIVE_NAMES = {
@@ -121,6 +122,13 @@ def is_sensitive_relative_path(path: Path) -> bool:
     )
 
 
+def is_sensitive_path_part(name: str) -> bool:
+    """Return whether a single path component is blocked from traversal."""
+
+    lower_name = name.lower()
+    return lower_name in SENSITIVE_NAMES or lower_name in SENSITIVE_PARTS
+
+
 def is_binary_path(path: Path) -> bool:
     """Return whether a path is likely binary based on extension/MIME."""
 
@@ -132,6 +140,18 @@ def is_binary_path(path: Path) -> bool:
     return bool(
         mime_type and not mime_type.startswith("text/") and "json" not in mime_type
     )
+
+
+def resolve_inside_repo(repo_root: Path, path: Path) -> Path:
+    """Resolve a path and require it to stay under the repository root."""
+
+    resolved_root = repo_root.resolve()
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise UnsafePathError("path escapes repository root") from exc
+    return resolved
 
 
 def assert_safe_read_path(repo_root: Path, relative_path: str, max_bytes: int) -> Path:
@@ -148,11 +168,10 @@ def assert_safe_read_path(repo_root: Path, relative_path: str, max_bytes: int) -
     ):
         raise UnsafePathError("file type is not approved for safe reads")
 
-    resolved = (repo_root / normalized).resolve()
-    try:
-        resolved.relative_to(repo_root.resolve())
-    except ValueError as exc:
-        raise UnsafePathError("path escapes repository root") from exc
+    candidate = repo_root / normalized
+    if candidate.is_symlink():
+        raise UnsafePathError("symlinked files are not readable")
+    resolved = resolve_inside_repo(repo_root, candidate)
     if not resolved.is_file():
         raise UnsafePathError("path is not a file")
     if resolved.stat().st_size > max_bytes:
@@ -163,7 +182,24 @@ def assert_safe_read_path(repo_root: Path, relative_path: str, max_bytes: int) -
 def contains_nul_bytes(path: Path, sample_size: int = 2048) -> bool:
     """Return whether a file sample contains NUL bytes."""
 
-    return b"\x00" in path.read_bytes()[:sample_size]
+    with path.open("rb") as handle:
+        return b"\x00" in handle.read(sample_size)
+
+
+def read_text_excerpt(path: Path, max_bytes: int) -> tuple[str, bool]:
+    """Read at most max_bytes from a text file and report truncation."""
+
+    with path.open("rb") as handle:
+        data = handle.read(max_bytes + 1)
+    truncated = len(data) > max_bytes
+    return data[:max_bytes].decode("utf-8", errors="replace"), truncated
+
+
+def iter_text_lines(path: Path, max_bytes: int) -> Iterator[tuple[int, str]]:
+    """Yield decoded lines from at most max_bytes of a file."""
+
+    text, _ = read_text_excerpt(path, max_bytes)
+    yield from enumerate(text.splitlines(), start=1)
 
 
 def redact_sensitive_lines(text: str) -> str:

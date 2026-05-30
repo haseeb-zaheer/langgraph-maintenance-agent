@@ -10,6 +10,7 @@ from langgraph_maintenance_agent.tools.registry import ToolContext
 from langgraph_maintenance_agent.tools.results import SearchMatch, ToolError, ToolResult
 from langgraph_maintenance_agent.tools.safety import (
     contains_nul_bytes,
+    iter_text_lines,
     redact_sensitive_lines,
 )
 
@@ -34,10 +35,10 @@ def search_static_markers(context: ToolContext, repo_name: str) -> ToolResult:
         if contains_nul_bytes(path):
             continue
         try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = iter_text_lines(path, context.limits.max_bytes_per_file)
         except OSError:
             continue
-        for index, line in enumerate(lines, start=1):
+        for index, line in lines:
             marker = MARKER_RE.search(line)
             if marker is None:
                 continue

@@ -112,6 +112,65 @@ def test_static_marker_search_is_bounded_and_public_safe(tmp_path: Path) -> None
     assert all(match["path"] != ".env" for match in result.data["matches"])
 
 
+def test_file_tools_skip_symlinks_that_escape_repo(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# TODO: private\n", encoding="utf-8")
+    (tmp_path / "linked.md").symlink_to(outside)
+    registry = make_registry(tmp_path)
+
+    listed = registry.call("list_files", {"repo_name": "demo"})
+    searched = registry.call("search_static_markers", {"repo_name": "demo"})
+    read = registry.call(
+        "read_safe_file",
+        {"repo_name": "demo", "relative_path": "linked.md"},
+    )
+
+    assert listed.ok
+    assert listed.data["files"] == []
+    assert searched.ok
+    assert searched.data["matches"] == []
+    assert not read.ok
+
+
+def test_list_files_prunes_sensitive_directories(tmp_path: Path) -> None:
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "README.md").write_text("x", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "README.md").write_text("x", encoding="utf-8")
+    registry = make_registry(tmp_path)
+
+    result = registry.call("list_files", {"repo_name": "demo"})
+
+    assert result.ok
+    paths = [entry["path"] for entry in result.data["files"]]
+    assert paths == ["src/README.md"]
+
+
+def test_list_files_respects_max_file_limit(tmp_path: Path) -> None:
+    for index in range(3):
+        (tmp_path / f"{index}.md").write_text("x", encoding="utf-8")
+    registry = make_registry(tmp_path, limits=ToolLimits(max_files=2))
+
+    result = registry.call("list_files", {"repo_name": "demo"})
+
+    assert result.ok
+    assert len(result.data["files"]) == 2
+    assert result.data["truncated"]
+
+
+def test_static_marker_search_respects_file_byte_limit(tmp_path: Path) -> None:
+    (tmp_path / "notes.md").write_text(
+        "x" * 50 + "\nTODO: outside limit\n",
+        encoding="utf-8",
+    )
+    registry = make_registry(tmp_path, limits=ToolLimits(max_bytes_per_file=20))
+
+    result = registry.call("search_static_markers", {"repo_name": "demo"})
+
+    assert result.ok
+    assert result.data["matches"] == []
+
+
 def test_dependency_manifest_detection(tmp_path: Path) -> None:
     for filename in ["pyproject.toml", "package.json", "Dockerfile", "dbt_project.yml"]:
         (tmp_path / filename).write_text("{}", encoding="utf-8")
