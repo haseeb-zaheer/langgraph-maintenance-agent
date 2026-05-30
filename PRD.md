@@ -1770,7 +1770,7 @@ Final validation:
       launch-readiness files only; ignored local `.env`, generated reports,
       caches, local config, and `dist/` remain untracked.
 - [x] Public repo audit scanner with `--history` passed on 2026-05-31 with 0
-      blockers, 0 high findings, 22 medium history-term findings, and 0 low
+      blockers, 0 high findings, 27 medium history-term findings, and 0 low
       findings.
 - [x] Manual review of scanner hits found no real secrets/private data. Current
       file blockers were eliminated; remaining history hits are redaction
@@ -1785,6 +1785,7 @@ Exit criteria:
 - [x] CI, package build, tests, lint, and typecheck pass locally and CI workflow
       is committed.
 - [x] Audit scan results are reviewed and documented in this checklist.
+- [x] Public launch checkpoint commits were created on 2026-05-31.
 
 ## Open Questions
 
