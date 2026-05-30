@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,28 @@ from langgraph_maintenance_agent.tools.results import ToolLimits
 
 def make_registry(repo_root: Path, *, limits: ToolLimits | None = None):
     config = AppConfig(repos=[RepoConfig(name="demo", path=repo_root, enabled=True)])
+    context = ToolContext.from_config(config, limits=limits)
+    return build_tool_registry(context)
+
+
+def make_command_registry(
+    repo_root: Path,
+    *,
+    safe_commands: dict[str, str],
+    timeout_seconds: int | None = None,
+    limits: ToolLimits | None = None,
+):
+    config = AppConfig(
+        repos=[
+            RepoConfig(
+                name="demo",
+                path=repo_root,
+                enabled=True,
+                safe_commands=safe_commands,
+                timeout_seconds=timeout_seconds,
+            )
+        ]
+    )
     context = ToolContext.from_config(config, limits=limits)
     return build_tool_registry(context)
 
@@ -183,18 +206,13 @@ def test_dependency_manifest_detection(tmp_path: Path) -> None:
     assert {"python", "node", "docker", "dbt"} <= ecosystems
 
 
-def test_configured_safe_command_is_skipped_stub(tmp_path: Path) -> None:
-    config = AppConfig(
-        repos=[
-            RepoConfig(
-                name="demo",
-                path=tmp_path,
-                enabled=True,
-                safe_commands={"tests": "pytest"},
-            )
-        ]
+def test_configured_safe_command_exit_zero_returns_command_result(
+    tmp_path: Path,
+) -> None:
+    registry = make_command_registry(
+        tmp_path,
+        safe_commands={"tests": f"{sys.executable} -c \"print('ok')\""},
     )
-    registry = build_tool_registry(ToolContext.from_config(config))
 
     result = registry.call(
         "run_configured_safe_command",
@@ -202,4 +220,96 @@ def test_configured_safe_command_is_skipped_stub(tmp_path: Path) -> None:
     )
 
     assert result.ok
-    assert result.data["status"] == "skipped"
+    assert result.data["status"] == "completed"
+    command_result = result.data["command_result"]
+    assert command_result["exit_code"] == 0
+    assert command_result["timed_out"] is False
+    assert command_result["stdout_excerpt"].strip() == "ok"
+
+
+def test_configured_safe_command_bounds_and_redacts_output(tmp_path: Path) -> None:
+    secret_key = "sk-" + "a" * 20
+    registry = make_command_registry(
+        tmp_path,
+        safe_commands={
+            "tests": (
+                f"{sys.executable} -c \"print('{secret_key}'); "
+                "print('x' * 100)\""
+            )
+        },
+        limits=ToolLimits(max_output_chars=20),
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "tests"},
+    )
+
+    assert result.ok
+    stdout = result.data["command_result"]["stdout_excerpt"]
+    assert secret_key not in stdout
+    assert "[redacted]" in stdout
+    assert len(stdout) == 20
+
+
+def test_configured_safe_command_runs_in_target_repo(tmp_path: Path) -> None:
+    registry = make_command_registry(
+        tmp_path,
+        safe_commands={
+            "tests": (
+                f"{sys.executable} -c "
+                "\"from pathlib import Path; print(Path.cwd())\""
+            )
+        },
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "tests"},
+    )
+
+    assert result.ok
+    assert result.data["command_result"]["stdout_excerpt"].strip() == str(tmp_path)
+    assert result.data["command_result"]["working_directory"] == str(tmp_path)
+
+
+def test_configured_safe_command_timeout_is_captured(tmp_path: Path) -> None:
+    registry = make_command_registry(
+        tmp_path,
+        safe_commands={"tests": f"{sys.executable} -c \"import time; time.sleep(2)\""},
+        timeout_seconds=1,
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "tests"},
+    )
+
+    assert result.ok
+    assert result.data["status"] == "incomplete"
+    command_result = result.data["command_result"]
+    assert command_result["timed_out"] is True
+    assert command_result["exit_code"] is None
+
+
+def test_unknown_command_label_does_not_execute(tmp_path: Path) -> None:
+    marker = tmp_path / "marker"
+    registry = make_command_registry(
+        tmp_path,
+        safe_commands={
+            "tests": (
+                f"{sys.executable} -c "
+                "\"from pathlib import Path; Path('marker').write_text('bad')\""
+            )
+        },
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "missing"},
+    )
+
+    assert not result.ok
+    assert result.error is not None
+    assert result.error.code == "unknown_command_label"
+    assert not marker.exists()

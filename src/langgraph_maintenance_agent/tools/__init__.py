@@ -92,7 +92,8 @@ def build_tool_registry(context: ToolContext) -> ToolRegistry:
             RegisteredTool(
                 name="run_configured_safe_command",
                 description=(
-                    "Skip configured safe command execution until a later batch."
+                    "Run an explicitly configured safe command with bounded "
+                    "redacted output."
                 ),
                 parameters=params(
                     {"command_label": {"type": "string"}},
