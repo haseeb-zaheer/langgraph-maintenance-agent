@@ -15,6 +15,7 @@ from langgraph_maintenance_agent.config import CheckName, RepoConfig
 from langgraph_maintenance_agent.llm.openrouter import OpenRouterClient
 from langgraph_maintenance_agent.schemas import (
     AgentError,
+    CommandResult,
     Finding,
     FindingCategory,
     IncompleteAgentRun,
@@ -25,6 +26,20 @@ from langgraph_maintenance_agent.schemas import (
 )
 from langgraph_maintenance_agent.tools.registry import ToolRegistry
 from langgraph_maintenance_agent.tools.results import ToolCallRecord, ToolResult
+
+COMMAND_CHECK_LABELS: dict[CheckName, str] = {
+    CheckName.TESTS: "tests",
+    CheckName.LINT: "lint",
+    CheckName.BUILD: "build",
+    CheckName.PYTHON_SYNTAX: "python-syntax",
+}
+
+COMMAND_LABEL_CATEGORIES: dict[str, FindingCategory] = {
+    "tests": FindingCategory.TEST,
+    "lint": FindingCategory.STATIC,
+    "build": FindingCategory.BUILD,
+    "python-syntax": FindingCategory.TEST,
+}
 
 
 def incomplete_to_repo_result(incomplete: IncompleteAgentRun) -> RepoResult:
@@ -134,26 +149,62 @@ class RepoInspectorAgent:
                     ),
                 )
             )
-        command_labels = list(repo.safe_commands)
-        for label in command_labels:
-            command_result = call(
+        command_results: list[CommandResult] = []
+        for check, label in COMMAND_CHECK_LABELS.items():
+            if check not in repo.checks:
+                continue
+            if label not in repo.safe_commands:
+                skipped.append(
+                    SkippedCheck(
+                        repo_name=repo.name,
+                        check_name=check.value,
+                        reason=(
+                            "No safe_commands entry configured for label "
+                            f"`{label}`."
+                        ),
+                    )
+                )
+                continue
+            command_tool_result = call(
                 "run_configured_safe_command",
                 {"repo_name": repo.name, "command_label": label},
             )
-            skipped.append(
-                SkippedCheck(
-                    repo_name=repo.name,
-                    check_name=label,
-                    reason=str(
-                        command_result.data.get("reason", "safe command skipped")
-                    ),
+            if command_tool_result.ok and "command_result" in command_tool_result.data:
+                command_result = CommandResult.model_validate(
+                    command_tool_result.data["command_result"]
                 )
-            )
+                command_results.append(command_result)
+                findings.extend(command_result_findings(repo.name, command_result))
+                if command_result.timed_out:
+                    skipped.append(
+                        SkippedCheck(
+                            repo_name=repo.name,
+                            check_name=label,
+                            reason=str(
+                                command_tool_result.data.get(
+                                    "reason", "safe command did not complete"
+                                )
+                            ),
+                        )
+                    )
+            elif command_tool_result.error is not None:
+                findings.append(
+                    Finding(
+                        repo_name=repo.name,
+                        severity=Severity.LOW,
+                        category=FindingCategory.RUNTIME,
+                        title=f"{label} command did not complete",
+                        description=command_tool_result.error.message,
+                        command_label=label,
+                        needs_human_review=True,
+                    )
+                )
         return RepoResult(
             repo_name=repo.name,
             path=str(repo.path) if repo.path is not None else None,
             findings=findings,
             skipped_checks=skipped,
+            command_results=command_results,
         )
 
     def inspect_with_llm(self, repo: RepoConfig) -> RepoResult:
@@ -280,7 +331,10 @@ class RepoInspectorAgent:
                 return RepoResult(
                     repo_name=repo.name,
                     path=str(repo.path) if repo.path is not None else None,
-                    findings=output.findings,
+                    findings=[
+                        *output.findings,
+                        *command_results_findings(repo.name, output.command_results),
+                    ],
                     skipped_checks=output.skipped_checks,
                     command_results=output.command_results,
                     errors=output.errors,
@@ -314,6 +368,68 @@ def checks_include(repo: RepoConfig, check: CheckName) -> bool:
     """Return whether a repo has a check configured."""
 
     return check in repo.checks
+
+
+def command_result_findings(
+    repo_name: str, command_result: CommandResult
+) -> list[Finding]:
+    """Convert failed command results into normalized findings."""
+
+    category = COMMAND_LABEL_CATEGORIES.get(
+        command_result.label, FindingCategory.RUNTIME
+    )
+    output_note = "No stdout/stderr excerpt was captured."
+    if command_result.stderr_excerpt and command_result.stdout_excerpt:
+        output_note = "Redacted stdout and stderr excerpts were captured."
+    elif command_result.stderr_excerpt:
+        output_note = "A redacted stderr excerpt was captured."
+    elif command_result.stdout_excerpt:
+        output_note = "A redacted stdout excerpt was captured."
+    if command_result.timed_out:
+        timeout_description = "the configured timeout"
+        if command_result.duration_seconds is not None:
+            timeout_description = f"{command_result.duration_seconds:.3f} seconds"
+        return [
+            Finding(
+                repo_name=repo_name,
+                severity=Severity.MEDIUM,
+                category=category,
+                title=f"{command_result.label} command timed out",
+                description=(
+                    f"The `{command_result.label}` command timed out after "
+                    f"{timeout_description}. {output_note}"
+                ),
+                command_label=command_result.label,
+                needs_human_review=True,
+            )
+        ]
+    if command_result.exit_code not in (None, 0):
+        return [
+            Finding(
+                repo_name=repo_name,
+                severity=Severity.MEDIUM,
+                category=category,
+                title=f"{command_result.label} command failed",
+                description=(
+                    f"The `{command_result.label}` command exited with code "
+                    f"{command_result.exit_code}. {output_note}"
+                ),
+                command_label=command_result.label,
+                needs_human_review=True,
+            )
+        ]
+    return []
+
+
+def command_results_findings(
+    repo_name: str, command_results: list[CommandResult]
+) -> list[Finding]:
+    """Convert a list of command results into normalized findings."""
+
+    findings: list[Finding] = []
+    for command_result in command_results:
+        findings.extend(command_result_findings(repo_name, command_result))
+    return findings
 
 
 def validate_repo_output_matches(
