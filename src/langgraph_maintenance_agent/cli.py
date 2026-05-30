@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from langgraph_maintenance_agent import __version__
+from langgraph_maintenance_agent.config import ConfigError, load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,10 +42,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "validate-config":
-        # Real validation is added in the config schema checkpoint.
-        if not args.config.exists():
-            parser.error(f"config file does not exist: {args.config}")
-        print(f"Config file exists: {args.config}")
+        try:
+            config = load_config(args.config)
+        except ConfigError as exc:
+            parser.exit(status=1, message=f"Config validation failed: {exc}\n")
+        enabled_count = sum(1 for repo in config.repos if repo.enabled)
+        print(
+            f"Config valid: {args.config} "
+            f"({enabled_count}/{len(config.repos)} repos enabled)"
+        )
         return 0
 
     parser.print_help()

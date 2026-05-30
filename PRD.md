@@ -588,11 +588,11 @@ This is the main safety gate for the entire project.
 
 Deliverables:
 
-- [ ] Implement `RepoConfig` schema.
-- [ ] Implement `CheckName` or equivalent constrained check representation.
-- [ ] Implement `SafeCommand` schema.
-- [ ] Implement top-level `AppConfig` schema.
-- [ ] Support repo fields:
+- [x] Implement `RepoConfig` schema.
+- [x] Implement `CheckName` or equivalent constrained check representation.
+- [x] Implement `SafeCommand` schema.
+- [x] Implement top-level `AppConfig` schema.
+- [x] Support repo fields:
       - `name`
       - `path`
       - `enabled`
@@ -601,53 +601,53 @@ Deliverables:
       - `timeout_seconds`
       - `notes`
       - optional `required`
-- [ ] Support report settings:
+- [x] Support report settings:
       - output directory
       - report filename prefix
       - whether to update `latest.md`
       - whether Discord delivery is enabled
-- [ ] Support runtime settings through environment variables, not committed
+- [x] Support runtime settings through environment variables, not committed
       config secrets.
-- [ ] Implement `load_config(path: Path) -> AppConfig`.
-- [ ] Validate duplicate repo names are rejected.
-- [ ] Validate enabled repos require a path.
-- [ ] Validate unknown check names are rejected unless custom checks are
+- [x] Implement `load_config(path: Path) -> AppConfig`.
+- [x] Validate duplicate repo names are rejected.
+- [x] Validate enabled repos require a path.
+- [x] Validate unknown check names are rejected unless custom checks are
       explicitly supported later.
-- [ ] Validate unsafe command labels are rejected, including names containing:
+- [x] Validate unsafe command labels are rejected, including names containing:
       `fix`, `format`, `upgrade`, `delete`, `remove`, `reset`, `checkout`,
       `commit`, `clean`, `migrate`, `install`.
-- [ ] Validate unsafe command strings are rejected when they clearly contain
+- [x] Validate unsafe command strings are rejected when they clearly contain
       destructive operations such as:
       `rm -rf`, `git reset`, `git checkout`, `git clean`, `npm audit fix`,
       `pip install -U`, `uv add`, `poetry add`, `alembic upgrade`.
-- [ ] Decide and document whether shell command strings are allowed. Recommended:
+- [x] Decide and document whether shell command strings are allowed. Recommended:
       allow shell strings only for explicitly configured `safe_commands`, but
       run all built-in checks without shell where possible.
-- [ ] Implement CLI command:
+- [x] Implement CLI command:
       `langgraph-maintenance validate-config examples/repos.yaml`.
-- [ ] Add `examples/repos.yaml` that validates without requiring private paths.
+- [x] Add `examples/repos.yaml` that validates without requiring private paths.
 
 Tests:
 
-- [ ] Valid config loads successfully.
-- [ ] Missing file produces a useful error.
-- [ ] Duplicate repo names fail.
-- [ ] Enabled repo without path fails.
-- [ ] Unknown check fails.
-- [ ] Unsafe safe-command label fails.
-- [ ] Unsafe safe-command string fails.
-- [ ] Disabled repo with incomplete details is handled according to documented
+- [x] Valid config loads successfully.
+- [x] Missing file produces a useful error.
+- [x] Duplicate repo names fail.
+- [x] Enabled repo without path fails.
+- [x] Unknown check fails.
+- [x] Unsafe safe-command label fails.
+- [x] Unsafe safe-command string fails.
+- [x] Disabled repo with incomplete details is handled according to documented
       behavior.
-- [ ] Example config stays public-safe.
+- [x] Example config stays public-safe.
 
 Validation:
 
-- [ ] `langgraph-maintenance validate-config examples/repos.yaml` exits `0`.
-- [ ] Invalid config fixtures exit nonzero or raise expected validation errors.
+- [x] `langgraph-maintenance validate-config examples/repos.yaml` exits `0`.
+- [x] Invalid config fixtures exit nonzero or raise expected validation errors.
 
 Exit criteria:
 
-- [ ] No repository scanning can occur without passing config validation.
+- [x] No repository scanning can occur without passing config validation.
 
 ### Phase 3: Deterministic Schemas, Findings, And Runtime Utilities
 

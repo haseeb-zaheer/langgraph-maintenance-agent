@@ -15,7 +15,18 @@ def test_validate_config_placeholder_accepts_existing_file(
     tmp_path: Path, capsys
 ) -> None:
     config_path = tmp_path / "repos.yaml"
-    config_path.write_text("repos: []\n", encoding="utf-8")
+    config_path.write_text(
+        """
+repos:
+  - name: demo
+    path: /path/to/demo
+    enabled: true
+    checks:
+      - git-status
+    safe_commands: {}
+""",
+        encoding="utf-8",
+    )
 
     assert main(["validate-config", str(config_path)]) == 0
-    assert "Config file exists" in capsys.readouterr().out
+    assert "Config valid" in capsys.readouterr().out
