@@ -40,3 +40,11 @@ formatter/fixer invocations, git mutation commands, and ad hoc file writes fail
 config validation. Timeouts and nonzero exits are reported for human review; the
 agent does not clean, reset, fix, upgrade, or rewrite the target repository
 after a command result.
+
+## Future Discord Delivery
+
+Discord delivery must remain opt-in and disabled by default. Webhook URLs must
+come from environment variables, never committed config, and must not be printed.
+Before sending, report content must be redacted and split into multiple webhook
+messages when needed so every Discord `content` payload stays below the
+2,000-character message limit.

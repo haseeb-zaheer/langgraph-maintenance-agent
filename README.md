@@ -63,6 +63,11 @@ workflow requests tool use instead of trusting unevidenced output.
 `--dry-run` performs checks and renders report content in memory, but it does
 not write report files or send Discord messages.
 
+Discord delivery is planned for a later phase and will be disabled by default.
+When implemented, users will be able to enable it in config or override it per
+run with CLI flags. Long Discord reports must be split into multiple webhook
+messages because Discord message content is limited to 2,000 characters.
+
 ## Safe Commands
 
 `safe_commands` are configured per repo and only run when a matching

@@ -352,6 +352,8 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Support optional report settings.
 - [x] Support model secrets only through environment variables, never config
       files.
+- [ ] Support Discord delivery enable/disable through config and CLI flags,
+      defaulting to disabled.
 - [ ] Validate that repo paths are absolute or intentionally relative to a safe
       base directory.
 - [x] Reject duplicate repo names.
@@ -503,7 +505,8 @@ The safety boundary must be enforced in code, not only prompts:
 - [ ] Support optional fallback `DISCORD_WEBHOOK_URL`.
 - [ ] Redact report before sending.
 - [ ] Extract a short summary for Discord.
-- [ ] Split long messages safely below Discord limits.
+- [ ] Split long messages into multiple Discord messages with each `content`
+      payload below Discord's 2,000-character message limit.
 - [ ] Handle HTTP failures clearly.
 - [ ] Never print the webhook URL.
 - [ ] Add `--summary-only` option.
@@ -1173,9 +1176,16 @@ Deliverables:
       - fallback `DISCORD_WEBHOOK_URL`
 - [ ] Support `.env` locally without committing it.
 - [ ] Never print webhook value.
+- [ ] Respect `report.discord_enabled` as the default delivery flag.
+- [ ] Add CLI flags to override config for a run:
+      - `--send-discord`
+      - `--no-discord`
 - [ ] Extract summary sections from full report.
 - [ ] Support `--summary-only`.
-- [ ] Support safe chunking below Discord message limits.
+- [ ] Support safe chunking into multiple webhook messages below Discord's
+      2,000-character `content` limit.
+- [ ] Include chunk numbering such as `(1/3)` when more than one Discord
+      message is sent.
 - [ ] Redact content immediately before sending.
 - [ ] Include a concise note when findings came from LLM agents and may need
       human review.
@@ -1189,7 +1199,9 @@ Deliverables:
 Tests:
 
 - [ ] Summary extraction test.
-- [ ] Chunking test.
+- [ ] Chunking tests for messages above 2,000 characters, preserving all
+      content across multiple messages.
+- [ ] Config and CLI tests for Discord enabled/disabled behavior.
 - [ ] Missing webhook error test.
 - [ ] Webhook redaction test.
 - [ ] Mock HTTP success test.
