@@ -1608,6 +1608,93 @@ Exit criteria:
       scan remains intentionally unchecked because it requires private
       credentials and would generate an uncommitted local report.
 
+### Phase 15: Source Review Output Hardening
+
+Goal: make source-review findings fail earlier with a strict source-only
+structured output schema, repair one fixable model output error without
+expanding evidence access, and report validation state more clearly.
+
+Context:
+
+- The optional local LLM scan in Phase 14 produced a plausible source finding
+  without `evidence_paths`.
+- Deterministic validation correctly rejected that finding, but the whole
+  source review became incomplete even though source planning and reads had
+  succeeded.
+
+Scope:
+
+- Keep `PRD.md` as the source of truth and checklist for this phase.
+- Do not change source candidate ranking or source read budgets.
+- Do not edit target repositories.
+- Do not add a new config setting for repair attempts in this phase.
+- Use one repair attempt only, and never read additional source files during
+  repair.
+
+Deliverables:
+
+- [ ] Add strict `SourceReviewFinding` and `SourceReviewOutput` schemas for the
+      final staged source-review findings call.
+- [ ] Require source findings to include non-empty evidence paths and
+      non-empty suggested actions at schema-validation time.
+- [ ] Restrict source finding categories to `bug-risk`, `refactor`,
+      `code-quality`, and `test-gap` at schema-validation time.
+- [ ] Convert accepted source-review findings into normalized `Finding`
+      records before storing `RepoResult`.
+- [ ] Keep deterministic validation for read-path enforcement, metadata
+      exceptions for test-gap findings, repo matching, and sensitive/generated
+      path rejection.
+- [ ] Add exactly one repair retry for malformed or validation-rejected
+      source-review output.
+- [ ] Include the validation error, allowed read evidence paths, allowed
+      metadata paths for test-gap findings, and redacted original model output
+      in the repair prompt.
+- [ ] Ensure repair never calls source read tools or expands allowed evidence.
+- [ ] Record accepted, repaired, and rejected source-review validation state in
+      `SourceReviewCoverage`.
+- [ ] Render validation status, repair attempt state, and redacted validation
+      errors in `Source Review Coverage` and appendix metadata.
+- [ ] Update `README.md`, `docs/agent-tools.md`, `docs/safety.md`,
+      `workflow.md`, and `examples/sample-report.md`.
+
+Tests:
+
+- [ ] Strict source-review schema accepts valid source findings.
+- [ ] Strict source-review schema rejects missing evidence paths.
+- [ ] Strict source-review schema rejects empty suggested actions.
+- [ ] Strict source-review schema rejects unsupported source categories.
+- [ ] Valid source output is accepted and converted to normalized `Finding`.
+- [ ] Missing evidence output succeeds after one repair when corrected.
+- [ ] Unread evidence output succeeds after one repair when corrected.
+- [ ] Repair failure produces incomplete result at
+      `source_review_findings_repair`.
+- [ ] Repair prompt does not request arbitrary shell or filesystem access.
+- [ ] Repair does not call `read_source_files` again.
+- [ ] Coverage renders accepted, repaired, and rejected validation states.
+- [ ] Discord summaries remain source-snippet-free.
+
+Validation:
+
+- [ ] `uv run pytest`
+- [ ] `uv run ruff check .`
+- [ ] `uv run mypy src`
+- [ ] `uv run langgraph-maintenance validate-config examples/repos.yaml`
+- [ ] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run --max-concurrency 2`
+- [ ] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
+- [ ] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
+- [ ] Secret scan reviewed before publication.
+- [ ] Optional local LLM scan against
+      `/home/haseeb/repositories/haseeb-web/ai-portfolio` was run with a
+      temporary config and report output kept uncommitted.
+
+Exit criteria:
+
+- [ ] Staged source review uses strict source-only structured output.
+- [ ] One-shot repair can correct fixable source-review output errors without
+      weakening deterministic evidence validation.
+- [ ] Rejected source-review output is reported with clear validation metadata
+      and no raw source/model dumps.
+
 ## Open Questions
 
 - Which LLM provider should be the default for the portfolio version?
