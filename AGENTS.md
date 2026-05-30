@@ -68,10 +68,15 @@ configuration, scheduling, or report behavior changes:
 
 ## LangGraph Design Intent
 
-Use LangGraph for the workflow graph and state transitions. Keep deterministic
-logic in normal Python functions and reserve LLM calls for analysis,
-classification, summarization, and final report composition.
+Use LangGraph for the supervisor workflow and state transitions. The intended
+portfolio design is agentic: OpenRouter-backed LLM agents inspect repositories
+by calling constrained Python tools such as git status, safe file listing,
+safe file reads, static marker search, dependency manifest detection, and
+configured safe-command execution.
+
+Keep deterministic logic in normal Python functions for config validation, tool
+safety, sensitive path blocking, command execution mechanics, redaction, report
+rendering, and delivery.
 
 Prefer typed state and structured outputs. Make safety boundaries explicit in
 code, tests, prompts, and config validation.
-

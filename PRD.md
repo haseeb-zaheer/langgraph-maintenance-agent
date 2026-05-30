@@ -8,7 +8,9 @@ repositories.
 
 The agent should inspect repository health, dependency metadata, configured
 lint/test/build commands, documentation drift, dirty worktrees, and suspicious
-maintenance risks. It must never modify target repositories. It should write a
+maintenance risks. It should be genuinely agentic: OpenRouter-backed LLM agents
+should reason over each configured repository by calling constrained,
+public-safe tools. It must never modify target repositories. It should write a
 local Markdown report and send a redacted summary to Discord.
 
 This project is a production-style rebuild of a Codex CLI prototype, but it
@@ -56,7 +58,9 @@ The core MVP is complete when:
 
 - A CLI can run the LangGraph workflow against a public-safe sample config.
 - The workflow scans only enabled configured repositories.
-- The workflow performs read-only metadata/docs/static checks.
+- An OpenRouter-backed repository inspector agent can inspect repositories using
+  constrained tools.
+- The workflow performs read-only metadata/docs/static checks through safe tools.
 - Findings are normalized into typed records with severity.
 - The final local Markdown report is generated.
 - Secret redaction is applied before report persistence.
@@ -72,20 +76,29 @@ The release-ready MVP additionally includes:
 
 ## Target Architecture
 
-The project should be workflow-first, with LangGraph coordinating explicit
-state transitions and normal Python handling deterministic work. LLM calls
-should be used only where judgment, summarization, or prioritization adds value.
+The project should be workflow-first and agentic. LangGraph coordinates explicit
+state transitions, OpenRouter-backed LLM agents decide which safe repository
+tools to call, and deterministic Python enforces configuration, tool safety,
+redaction, report rendering, and persistence.
 
 ```text
 systemd timer / manual CLI
   -> Python CLI
-    -> LangGraph workflow
+    -> LangGraph supervisor workflow
       -> load + validate config
       -> prepare run context
-      -> fan out repo inspections
-      -> run read-only checks
-      -> run configured safe commands
-      -> classify + normalize findings
+      -> select enabled repos
+      -> fan out repo inspector agents
+        -> repo inspector agent
+          -> safe tools:
+            -> git_status
+            -> latest_commit
+            -> list_files
+            -> read_safe_file
+            -> search_static_markers
+            -> detect_dependency_manifests
+            -> run_configured_safe_command
+          -> structured repo findings
       -> merge findings
       -> redact sensitive output
       -> render Markdown report
@@ -103,6 +116,19 @@ src/langgraph_maintenance_agent/
   state.py
   schemas.py
 
+  agents/
+    supervisor.py
+    repo_inspector.py
+    prompts.py
+
+  tools/
+    git.py
+    files.py
+    search.py
+    dependencies.py
+    commands.py
+    registry.py
+
   checks/
     git.py
     docs.py
@@ -116,8 +142,9 @@ src/langgraph_maintenance_agent/
     redaction.py
 
   llm/
-    prompts.py
-    summarizer.py
+    openrouter.py
+    types.py
+    structured_outputs.py
 
   runtime/
     paths.py
@@ -125,32 +152,69 @@ src/langgraph_maintenance_agent/
     errors.py
 ```
 
-### Deterministic Logic Vs LLM Logic
+### Agentic Tool-Use Model
+
+The repo inspector should be an LLM agent, not just a deterministic function.
+For each configured repository, it should receive:
+
+- repo name
+- configured path
+- enabled checks
+- allowed command labels
+- timeout guidance
+- safety instructions
+
+It should call only registered tools. The LLM must never receive unrestricted
+shell access or direct arbitrary file access.
+
+Required tools:
+
+- `git_status(repo_name)`: return branch, dirty state, ahead/behind summary, and
+  concise status metadata.
+- `latest_commit(repo_name)`: return latest commit hash/date/subject when
+  available.
+- `list_files(repo_name, patterns=None)`: list public-safe file paths while
+  excluding sensitive paths.
+- `read_safe_file(repo_name, relative_path)`: read only approved documentation
+  and manifest files; reject `.env`, logs, private keys, databases, raw reports,
+  and other sensitive paths.
+- `search_static_markers(repo_name)`: search TODO/FIXME/HACK and return bounded
+  public-safe path/line summaries.
+- `detect_dependency_manifests(repo_name)`: identify Python, Node, Docker, dbt,
+  and other dependency manifests without running package managers.
+- `run_configured_safe_command(repo_name, command_label)`: run only commands
+  configured and validated in `safe_commands`.
+
+Tool output must be bounded and redacted before it is added to graph state or
+sent back into the model.
+
+### Deterministic Logic Vs LLM Agent Logic
 
 Use deterministic Python for:
 
 - Config loading and validation.
 - Repository allowlist enforcement.
-- Git metadata collection.
-- Static file/path scanning.
-- Safe command execution.
+- Tool registry and repo-name-to-path resolution.
+- Tool safety checks.
+- Sensitive path blocking.
+- Safe command execution mechanics.
 - Timeout handling.
 - Secret redaction.
 - Markdown rendering.
 - Discord delivery.
 - Failure report generation.
 
-Use the LLM for:
+Use OpenRouter-backed LLM agents for:
 
-- Executive-summary generation.
-- Finding deduplication assistance when deterministic keys are insufficient.
-- Suggested next actions.
-- Ambiguous risk explanation.
-- Human-readable prioritization from already structured findings.
+- Deciding which safe tools to call for a configured repo.
+- Interpreting safe tool outputs.
+- Producing structured repository findings.
+- Writing executive summaries and suggested next actions.
+- Explaining ambiguous risks from already redacted evidence.
 
-Do not make every check an LLM agent. The portfolio value should come from a
-clear production-style workflow with explicit safety boundaries, typed state,
-and selective model use.
+The portfolio value should come from constrained tool-using agents, not from
+unrestricted shell access. The deterministic layer must remain the safety
+boundary.
 
 ### LangGraph Node Design
 
@@ -159,12 +223,13 @@ The primary graph should include these nodes:
 - `load_config`: read and validate the allowlist config.
 - `prepare_run`: create run id, timestamps, report paths, and output dirs.
 - `select_repos`: filter enabled repositories.
-- `inspect_repo`: run per-repo deterministic metadata, docs, dependency, and
-  static checks.
-- `run_safe_commands`: run explicitly configured commands with timeouts.
-- `classify_findings`: convert raw results into typed severity-ranked findings.
+- `build_tool_registry`: create configured, repo-scoped safe tools.
+- `inspect_repo_agent`: run the repo inspector agent for one configured repo.
+- `normalize_agent_output`: validate structured agent output into typed
+  findings and skipped checks.
 - `merge_results`: deduplicate and group findings across repositories.
-- `summarize_with_llm`: optional summary and next-action generation.
+- `summarize_with_agent`: create executive summary and next actions from
+  structured findings.
 - `redact_report`: remove secrets and unsafe values before persistence/delivery.
 - `render_markdown`: produce the full local Markdown report.
 - `write_report`: write timestamped report and update `reports/latest.md`.
@@ -173,14 +238,14 @@ The primary graph should include these nodes:
 
 ### Execution Model
 
-The MVP may run repository checks sequentially. The portfolio-ready version
-should add LangGraph fan-out/fan-in:
+The first agentic workflow may inspect repositories sequentially for simplicity.
+The portfolio-ready version should add LangGraph fan-out/fan-in:
 
 ```text
 select_repos
-  -> inspect_repo(repo A)
-  -> inspect_repo(repo B)
-  -> inspect_repo(repo N)
+  -> inspect_repo_agent(repo A)
+  -> inspect_repo_agent(repo B)
+  -> inspect_repo_agent(repo N)
   -> merge_results
 ```
 
@@ -211,6 +276,15 @@ The concrete implementation can use `TypedDict`, Pydantic models, or a mixture,
 but external data such as config, findings, command results, and delivery status
 should be schema-validated.
 
+Agent-specific state should also track:
+
+- tool call history
+- bounded tool outputs
+- model name/provider
+- structured agent output
+- redaction warnings
+- incomplete agent runs
+
 ### Safety Boundary
 
 The safety boundary must be enforced in code, not only prompts:
@@ -219,6 +293,10 @@ The safety boundary must be enforced in code, not only prompts:
 - Safe command allowlist only.
 - Command timeouts.
 - Blocked unsafe command keywords.
+- LLM agents can only call registered tools.
+- Tools resolve repo names through validated config; agents do not pass raw
+  filesystem roots.
+- `read_safe_file` blocks sensitive paths and extensions.
 - No `.env` reads from target repositories.
 - No raw private log reads.
 - Redaction before report persistence and delivery.
@@ -230,8 +308,8 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Repository Scaffold
 
-- [ ] Initialize Python project metadata with `pyproject.toml`.
-- [ ] Choose import package name: `langgraph_maintenance_agent`.
+- [x] Initialize Python project metadata with `pyproject.toml`.
+- [x] Choose import package name: `langgraph_maintenance_agent`.
 - [x] Create `src/langgraph_maintenance_agent/`.
 - [x] Create `tests/`.
 - [x] Create `config/`.
@@ -242,66 +320,78 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Add `.gitignore` for `.env`, caches, generated reports, logs, and virtual
       environments.
 - [x] Add `.env.example` with placeholders only.
-- [ ] Add `README.md`.
-- [ ] Add `ARCHITECTURE.md`.
-- [ ] Add license decision before publishing.
+- [x] Add `README.md`.
+- [x] Add `ARCHITECTURE.md`.
+- [x] Add license decision before publishing.
 
 ### Core Dependencies
 
-- [ ] Add LangGraph.
-- [ ] Add LangChain/OpenAI integration only if needed for model calls.
-- [ ] Add Pydantic for config and report schemas.
-- [ ] Add PyYAML or equivalent for config loading.
-- [ ] Add pytest.
-- [ ] Add ruff or another linter.
-- [ ] Add mypy or pyright if type checking is included.
+- [x] Add LangGraph.
+- [ ] Add OpenRouter-compatible model client support for agent calls.
+- [ ] Add LangChain/OpenAI integration only if it is the chosen adapter for
+      OpenRouter-compatible tool calling.
+- [x] Add Pydantic for config and report schemas.
+- [x] Add PyYAML or equivalent for config loading.
+- [x] Add pytest.
+- [x] Add ruff or another linter.
+- [x] Add mypy or pyright if type checking is included.
 - [ ] Keep dependency list minimal and explain each major dependency.
 
 ### Configuration Model
 
-- [ ] Define config schema for repositories.
-- [ ] Support fields: `name`, `path`, `enabled`, `checks`,
+- [x] Define config schema for repositories.
+- [x] Support fields: `name`, `path`, `enabled`, `checks`,
       `safe_commands`, `timeout_seconds`, `notes`.
-- [ ] Support optional report settings.
-- [ ] Support optional model settings through environment variables, not secrets
-      in config files.
+- [ ] Support optional agent/model settings through environment variables and
+      non-secret config:
+      - provider name, default `openrouter`
+      - model name env override
+      - max tool calls per repo
+      - max agent iterations per repo
+      - no-LLM or deterministic fallback mode
+- [x] Support optional report settings.
+- [x] Support model secrets only through environment variables, never config
+      files.
 - [ ] Validate that repo paths are absolute or intentionally relative to a safe
       base directory.
-- [ ] Reject duplicate repo names.
-- [ ] Reject enabled repos without a path.
-- [ ] Reject unknown check names unless explicitly allowed as custom checks.
-- [ ] Reject unsafe command names such as `fix`, `format`, `upgrade`, `delete`,
+- [x] Reject duplicate repo names.
+- [x] Reject enabled repos without a path.
+- [x] Reject unknown check names unless explicitly allowed as custom checks.
+- [x] Reject unsafe command names such as `fix`, `format`, `upgrade`, `delete`,
       `reset`, `checkout`, `commit`, or `clean`.
-- [ ] Provide `examples/repos.yaml` with synthetic public-safe paths.
-- [ ] Never include real private webhook URLs or tokens in config.
+- [x] Provide `examples/repos.yaml` with synthetic public-safe paths.
+- [x] Never include real private webhook URLs or tokens in config.
 
 ### LangGraph State Design
 
-- [ ] Define a typed graph state.
-- [ ] Include run metadata: run id, start time, config path, output paths.
-- [ ] Include repository configs.
-- [ ] Include per-repo check results.
-- [ ] Include findings.
-- [ ] Include skipped checks.
-- [ ] Include command execution summaries.
+- [x] Define a typed graph state.
+- [x] Include run metadata: run id, start time, config path, output paths.
+- [x] Include repository configs.
+- [x] Include per-repo check results.
+- [x] Include findings.
+- [x] Include skipped checks.
+- [x] Include command execution summaries.
 - [ ] Include redaction warnings.
-- [ ] Include final report content.
-- [ ] Include delivery status.
-- [ ] Include fatal errors and partial failures.
-- [ ] Ensure state is serializable for debugging and tests.
+- [x] Include final report content.
+- [x] Include delivery status.
+- [x] Include fatal errors and partial failures.
+- [ ] Include agent/tool-call history with bounded redacted outputs.
+- [ ] Include model provider and model name used for each agent run.
+- [ ] Include incomplete agent runs and tool failures.
+- [x] Ensure state is serializable for debugging and tests.
 
 ### Workflow Nodes
 
 - [ ] `load_config`: read and validate allowlist config.
 - [ ] `prepare_run`: create run id, output paths, and runtime context.
 - [ ] `select_repos`: filter enabled repositories.
-- [ ] `inspect_repo`: run repo-level read-only checks.
-- [ ] `run_safe_commands`: execute configured commands with timeouts.
-- [ ] `detect_stack`: identify Python, Node, Docker, dbt, or other stack hints.
-- [ ] `scan_docs`: detect README, AGENTS, architecture docs, setup docs.
-- [ ] `scan_static_markers`: find TODO/FIXME/HACK and suspicious artifacts.
-- [ ] `classify_findings`: normalize severity and category.
+- [ ] `build_tool_registry`: create repo-scoped safe tools for enabled repos.
+- [ ] `inspect_repo_agent`: run an LLM repo inspector agent with safe tools.
+- [ ] `normalize_agent_output`: validate structured agent output into findings,
+      skipped checks, command summaries, and errors.
 - [ ] `merge_results`: dedupe and group findings.
+- [ ] `summarize_with_agent`: produce executive summary and suggested next
+      actions from structured findings.
 - [ ] `redact_report`: remove secret patterns and unsafe values.
 - [ ] `render_markdown`: create the local full report.
 - [ ] `write_report`: persist report and latest pointer/copy.
@@ -310,16 +400,31 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### Graph Routing
 
-- [ ] Fan out enabled repositories for parallel inspection when supported.
+- [ ] Fan out enabled repositories for parallel agent inspection when supported.
 - [ ] Continue if one repository fails, unless config marks it required.
 - [ ] Route command timeouts to skipped/incomplete check records.
+- [ ] Route agent iteration/tool-call limits to incomplete check records.
+- [ ] Route malformed structured agent output to validation errors and
+      deterministic fallback where possible.
 - [ ] Route redaction hits to a warning section without exposing values.
 - [ ] Route fatal configuration errors to a local failure report.
 - [ ] Ensure failed runs never send stale previous reports.
 
-### Tooling And Command Execution
+### Agent Tools And Command Execution
 
-- [ ] Implement a command runner wrapper.
+- [ ] Implement a repo-scoped tool registry.
+- [ ] Implement `git_status(repo_name)`.
+- [ ] Implement `latest_commit(repo_name)`.
+- [ ] Implement `list_files(repo_name, patterns=None)`.
+- [ ] Implement `read_safe_file(repo_name, relative_path)`.
+- [ ] Implement `search_static_markers(repo_name)`.
+- [ ] Implement `detect_dependency_manifests(repo_name)`.
+- [ ] Implement `run_configured_safe_command(repo_name, command_label)`.
+- [ ] Ensure tools accept repo names, not arbitrary filesystem roots.
+- [ ] Ensure `read_safe_file` rejects `.env`, logs, databases, private keys, raw
+      reports, binary files, and paths outside the repo.
+- [ ] Ensure tool outputs are bounded and redacted before model/state use.
+- [ ] Implement a command runner wrapper for configured safe commands.
 - [ ] Enforce working directory per target repo.
 - [ ] Enforce timeout per command.
 - [ ] Capture exit status.
@@ -330,9 +435,11 @@ The safety boundary must be enforced in code, not only prompts:
 - [ ] Mark commands as skipped if not configured.
 - [ ] Avoid reading `.env`, raw logs, credential files, private key files, and
       other sensitive files.
+- [ ] Add tests for sensitive path rejection.
+- [ ] Add tests proving agents cannot call unregistered tools.
 - [ ] Add tests for unsafe command rejection.
 
-### Repository Checks
+### Repository Tool Capabilities
 
 - [ ] Check path existence.
 - [ ] Check whether path is a git repository.
@@ -348,17 +455,22 @@ The safety boundary must be enforced in code, not only prompts:
 - [ ] Search suspicious committed artifacts by filename pattern.
 - [ ] Record skipped checks and reasons.
 
-### LLM Usage
+### Agent And LLM Usage
 
-- [ ] Decide where LLM calls are genuinely useful.
-- [ ] Use deterministic Python for config parsing, command execution, redaction,
-      and report writing where possible.
-- [ ] Use LLM for summarizing findings and suggesting next actions.
-- [ ] Require structured output from LLM summarization.
+- [ ] Use OpenRouter as the preferred provider.
+- [ ] Load `OPENROUTER_API_KEY` from environment only.
+- [ ] Load model name from `LANGGRAPH_MAINTENANCE_LLM_MODEL`, with a documented
+      safe default placeholder.
+- [ ] Use LLM agents for repo inspection and report summarization.
+- [ ] Use deterministic Python for config parsing, tool safety, command
+      execution mechanics, redaction, and report writing.
+- [ ] Require structured output from repo inspector agents.
+- [ ] Require structured output from summary agent.
 - [ ] Add prompt templates under `src/.../prompts/` or `prompts/`.
 - [ ] Keep prompts public-safe and free of private examples.
 - [ ] Add tests or golden fixtures for prompt inputs/outputs where practical.
-- [ ] Support a no-LLM dry run mode for tests and demos.
+- [ ] Support a no-LLM deterministic fallback mode for tests and public demos.
+- [ ] Add mocked model tests for tool-call and structured-output flows.
 
 ### Report Format
 
@@ -531,7 +643,7 @@ Deliverables:
       - `pydantic`
       - `PyYAML` or another YAML parser
 - [x] Add optional LLM dependencies only if the implementation needs them in the
-      same phase. Prefer delaying provider-specific packages until Phase 8.
+      same phase. Prefer delaying provider-specific packages until Phase 5.
 - [x] Add dev dependencies:
       - `pytest`
       - `ruff`
@@ -721,57 +833,70 @@ Exit criteria:
 - [x] Later phases can return structured results without inventing ad hoc
       dictionaries.
 
-### Phase 4: Built-In Read-Only Repository Checks
+### Phase 4: Safe Repository Tool Layer
 
-Goal: implement the safe deterministic checks that do not execute project test,
-lint, build, install, fix, or cleanup commands.
+Goal: implement the constrained Python tools that LLM agents are allowed to use.
+This phase creates the agent's tool surface but does not call an LLM yet.
 
 Deliverables:
 
-- [ ] Implement repo path existence check.
-- [ ] Implement git repository detection.
-- [ ] Implement git branch detection.
-- [ ] Implement latest commit metadata collection.
-- [ ] Implement concise dirty-state summary.
-- [ ] Implement ahead/behind summary when remote tracking info is available.
-- [ ] Implement untracked file summary without reading file contents.
-- [ ] Implement ignored runtime artifact summary where useful.
-- [ ] Implement docs presence check:
-      - `README.md`
-      - `AGENTS.md`
-      - `ARCHITECTURE.md`
-      - `CONTRIBUTING.md`
-      - project-specific setup docs
-- [ ] Implement dependency manifest detection:
+- [ ] Create `tools/` package with repo-scoped tool modules and registry.
+- [ ] Implement `ToolContext` containing validated config, repo map, timeouts,
+      output limits, and redaction hooks.
+- [ ] Implement tool result schemas for success, skipped, and error outcomes.
+- [ ] Implement `git_status(repo_name)`:
+      - path existence
+      - git repo detection
+      - branch
+      - latest status summary
+      - dirty/untracked summary
+      - ahead/behind when available
+- [ ] Implement `latest_commit(repo_name)`:
+      - hash
+      - date
+      - subject
+      - graceful non-git handling
+- [ ] Implement `list_files(repo_name, patterns=None)`:
+      - public-safe relative paths only
+      - configurable max file count
+      - excludes sensitive paths and ignored runtime directories
+- [ ] Implement `read_safe_file(repo_name, relative_path)`:
+      - allow only safe docs/manifests/source snippets needed for inspection
+      - reject path traversal
+      - reject `.env`, logs, databases, private keys, raw reports, binary files,
+        and oversized files
+      - return bounded, redacted content
+- [ ] Implement `search_static_markers(repo_name)`:
+      - TODO/FIXME/HACK search
+      - bounded path/line summaries
+      - no sensitive file reads
+- [ ] Implement `detect_dependency_manifests(repo_name)`:
       - Python: `pyproject.toml`, `requirements*.txt`, `uv.lock`,
         `poetry.lock`
       - Node: `package.json`, lockfiles
       - Docker: `Dockerfile`, `compose.yaml`, `docker-compose.yml`
       - dbt: `dbt_project.yml`
-- [ ] Implement static marker scan for TODO/FIXME/HACK.
-- [ ] Implement suspicious artifact filename scan:
-      `.env`, `.pem`, `.key`, `id_rsa`, `.sqlite`, `.db`, `.log`,
-      generated report files, local caches.
-- [ ] Ensure sensitive files are not read. Only report file paths or counts when
-      safe.
-- [ ] Convert check outcomes into `RepoResult`, `Finding`, and `SkippedCheck`
-      structures.
-- [ ] Add built-in check dispatcher for configured check names:
-      - `git-status`
-      - `docs`
-      - `static-search`
-      - `dependency-metadata`
+- [ ] Implement `run_configured_safe_command(repo_name, command_label)` as a
+      stub that returns skipped until Phase 7 command execution is implemented.
+- [ ] Ensure every tool accepts a repo name and never arbitrary raw root paths.
+- [ ] Ensure every tool output is bounded and redacted before state/model use.
+- [ ] Convert tool outputs into structures reusable by agent prompts and
+      deterministic fallback tests.
 
 Tests:
 
 - [ ] Temporary non-git directory is reported correctly.
 - [ ] Temporary git repo with clean state is reported correctly.
 - [ ] Temporary git repo with dirty state is reported correctly.
-- [ ] Docs presence detection works.
+- [ ] `list_files` excludes sensitive paths.
+- [ ] `read_safe_file` reads safe docs/manifests.
+- [ ] `read_safe_file` rejects `.env`, logs, private keys, path traversal, and
+      oversized files.
 - [ ] Dependency manifest detection works for synthetic files.
 - [ ] Static marker scan finds TODO/FIXME/HACK without reading ignored secrets.
-- [ ] Suspicious artifact scan reports paths/counts without printing contents.
-- [ ] Disabled checks are skipped with reasons.
+- [ ] Tool outputs are bounded and redacted.
+- [ ] Unknown repo names are rejected.
+- [ ] Command tool returns skipped before Phase 7.
 
 Validation:
 
@@ -780,76 +905,72 @@ Validation:
 
 Exit criteria:
 
-- [ ] The project can inspect synthetic repos without LLMs, Discord, safe
-      commands, or LangGraph.
+- [ ] The project exposes a safe, tested tool layer that an LLM agent can call.
 
-### Phase 5: Markdown Reporting And Redaction
+### Phase 5: OpenRouter Model Client And Agent Contracts
 
-Goal: produce useful local reports from deterministic check results and ensure
-secret redaction is available before anything is persisted or delivered.
+Goal: add OpenRouter-backed agent infrastructure, prompts, and structured output
+contracts without yet wiring the full LangGraph workflow.
 
 Deliverables:
 
-- [ ] Implement redaction patterns for:
-      - Discord webhook URLs
-      - common token/secret/password/api-key assignments
-      - authorization headers
-      - private key block markers
-      - `.env`-style values
-- [ ] Implement redaction result metadata, such as count of redactions by type.
-- [ ] Implement Markdown renderer with required sections:
-      - `# Routine Maintenance Report - YYYY-MM-DD`
-      - `## Executive Summary`
-      - `## Critical Findings`
-      - `## High Priority`
-      - `## Medium Priority`
-      - `## Low Priority`
-      - `## Repositories Scanned`
-      - `## Repositories Skipped`
-      - `## Dependency Concerns`
-      - `## Test/Lint/Build Results`
-      - `## Dirty Worktrees`
-      - `## Suggested Next Actions`
-      - `## Appendix: Per-Repo Details`
-- [ ] Use `None found.` for empty severity sections.
-- [ ] Include commands run and exit statuses when command results exist.
-- [ ] Include skipped checks and reasons.
-- [ ] Include auditor failures and incomplete checks.
-- [ ] Implement report writer:
-      - create reports directory
-      - write date report
-      - avoid overwriting by using timestamp fallback
-      - update `reports/latest.md`
-- [ ] Implement fresh failure report writer for fatal workflow errors.
-- [ ] Ensure all report content is redacted before writing.
+- [ ] Add OpenRouter client module under `llm/openrouter.py`.
+- [ ] Use environment variable `OPENROUTER_API_KEY`; never read it from config.
+- [ ] Use `LANGGRAPH_MAINTENANCE_LLM_MODEL` for the default model override.
+- [ ] Document an example model placeholder, not a real private preference.
+- [ ] Add provider/model fields to runtime state and run metadata.
+- [ ] Define structured output schema for repo inspector agent:
+      - repo identity
+      - checks attempted
+      - tool calls used
+      - findings
+      - skipped checks
+      - command notes
+      - dependency notes
+      - incomplete checks
+      - confidence/needs human review flags
+- [ ] Define structured output schema for summary agent:
+      - executive summary
+      - critical/high/medium/low highlights
+      - suggested next actions
+      - auditor limitations
+- [ ] Add repo inspector prompt:
+      - must use only supplied tools
+      - must not request arbitrary shell/file access
+      - must not ask tools for secrets
+      - must return structured output
+- [ ] Add summary prompt:
+      - takes redacted structured findings only
+      - does not invent commands or findings
+- [ ] Add no-LLM deterministic fallback contracts for tests and demos.
+- [ ] Use mocks/fakes for all model tests; public tests must not require
+      OpenRouter credentials.
 
 Tests:
 
-- [ ] Redacts webhook URL.
-- [ ] Redacts token/password/api-key lines.
-- [ ] Redacts authorization headers.
-- [ ] Redacts private key block marker content.
-- [ ] Markdown renderer includes all required sections.
-- [ ] Empty sections use `None found.`.
-- [ ] Report writer updates latest report.
-- [ ] Report writer avoids overwriting existing report.
-- [ ] Failure report is fresh and does not reuse stale `latest.md`.
-- [ ] Golden sample report test uses synthetic data only.
+- [ ] Missing `OPENROUTER_API_KEY` in LLM mode fails clearly.
+- [ ] No-LLM mode does not require or read `OPENROUTER_API_KEY`.
+- [ ] Model name is loaded from env override when set.
+- [ ] Repo inspector structured output validates.
+- [ ] Summary structured output validates.
+- [ ] Malformed model output becomes an incomplete agent result.
+- [ ] Prompts do not contain private examples or raw local paths.
 
 Validation:
 
-- [ ] Generated local report for synthetic input is readable and public-safe.
-- [ ] `reports/` generated files remain ignored by git.
+- [ ] Unit tests use mocked model responses only.
+- [ ] Public demo still works without API keys.
 
 Exit criteria:
 
-- [ ] A deterministic non-graph pipeline can produce a complete local Markdown
-      report from synthetic repo results.
+- [ ] The project can instantiate OpenRouter-backed agent contracts safely, and
+      tests can validate agent behavior without real network/model calls.
 
-### Phase 6: LangGraph Sequential Workflow
+### Phase 6: LangGraph Sequential Tool-Using Agent Workflow
 
-Goal: wire the deterministic components into a LangGraph workflow that can run
-end to end without LLM, Discord, safe commands, systemd, or parallel fan-out.
+Goal: wire config, tool registry, repo inspector agent, structured output
+normalization, redaction, and report writing into the first end-to-end LangGraph
+workflow. This phase creates the core agentic MVP.
 
 Deliverables:
 
@@ -857,9 +978,14 @@ Deliverables:
 - [ ] Implement `load_config` node.
 - [ ] Implement `prepare_run` node.
 - [ ] Implement `select_repos` node.
-- [ ] Implement sequential per-repo inspection node or loop.
+- [ ] Implement `build_tool_registry` node.
+- [ ] Implement sequential `inspect_repo_agent` node or loop.
+- [ ] Repo inspector agent must use only registered tools.
+- [ ] Enforce max tool calls / max iterations per repo.
+- [ ] Implement `normalize_agent_output` node.
 - [ ] Implement `merge_results` node.
-- [ ] Implement deterministic summary generation for `--no-llm`.
+- [ ] Implement `summarize_with_agent` node.
+- [ ] Implement deterministic summary fallback for `--no-llm`.
 - [ ] Implement `redact_report` node.
 - [ ] Implement `render_markdown` node.
 - [ ] Implement `write_report` node.
@@ -869,9 +995,12 @@ Deliverables:
       possible instead of crashing the whole run.
 - [ ] Implement CLI:
       `langgraph-maintenance run --config examples/repos.yaml --no-llm`.
+- [ ] Implement CLI:
+      `langgraph-maintenance run --config <config> --llm --provider openrouter`.
 - [ ] Add `--output-dir` option.
 - [ ] Add `--dry-run` option that performs checks and renders output without
       writing report files.
+- [ ] Ensure dry-run never sends Discord or writes reports.
 
 Tests:
 
@@ -881,6 +1010,11 @@ Tests:
 - [ ] Workflow writes latest report.
 - [ ] Workflow dry run does not write files.
 - [ ] Workflow no-LLM mode requires no API key.
+- [ ] Workflow LLM mode uses mocked OpenRouter client.
+- [ ] Agent cannot call unregistered tools.
+- [ ] Agent tool-call limit produces incomplete check record.
+- [ ] Malformed agent output produces validation error and fallback/incomplete
+      record.
 - [ ] Fatal config failure writes/returns a useful failure result.
 
 Validation:
@@ -889,16 +1023,18 @@ Validation:
       works.
 - [ ] `langgraph-maintenance run --config <temp-config> --no-llm` writes a
       report.
+- [ ] Mocked LLM workflow test proves repo inspector agent uses tools.
 - [ ] `python -m pytest` passes.
 
 Exit criteria:
 
-- [ ] This is the core MVP. The project is now a real LangGraph app.
+- [ ] This is the core MVP. The project is now a real tool-using LangGraph agent
+      app.
 
-### Phase 7: Safe Command Execution
+### Phase 7: Safe Command Tool Execution
 
-Goal: add explicitly configured command execution while preserving the
-report-only safety model.
+Goal: upgrade `run_configured_safe_command` from skipped stub to working
+repo-scoped tool execution while preserving the report-only safety model.
 
 Deliverables:
 
@@ -942,58 +1078,80 @@ Validation:
 Exit criteria:
 
 - [ ] Configured tests/lint/build checks are supported without weakening the
-      safety boundary.
+      safety boundary, and agents can call them only through the safe command
+      tool.
 
-### Phase 8: Optional LLM Summarization
+### Phase 8: Markdown Reporting, Redaction, And Agent Summaries
 
-Goal: add selective model use for summarization and next actions while keeping
-the default demo runnable without credentials.
+Goal: produce polished local reports from tool-using agent outputs and ensure
+secret redaction is applied before persistence, model summarization, and
+delivery.
 
 Deliverables:
 
-- [ ] Decide provider integration. Recommended default: OpenAI-compatible
-      provider through environment variables, with no hard-coded model secrets.
-- [ ] Add provider-specific dependency only if needed.
-- [ ] Implement prompt template for summary generation.
-- [ ] Input to LLM must be structured findings, not raw unredacted logs.
-- [ ] Redact before LLM call unless explicitly documented otherwise.
-- [ ] Require structured output for:
-      - executive summary
-      - suggested next actions
-      - optional finding grouping notes
-- [ ] Implement no-LLM fallback that remains the default for tests and sample
-      demos.
-- [ ] Add CLI flags:
-      - `--no-llm`
-      - `--llm`
-      - optional `--model`
-- [ ] Ensure missing API key produces a clear skip/fallback message rather than
-      a crash when no-LLM mode is active.
+- [ ] Implement redaction patterns for:
+      - Discord webhook URLs
+      - common token/secret/password/api-key assignments
+      - authorization headers
+      - private key block markers
+      - `.env`-style values
+- [ ] Implement redaction result metadata, such as count of redactions by type.
+- [ ] Redact tool outputs before they are stored, sent to summary agent, written
+      to reports, or delivered.
+- [ ] Implement Markdown renderer with required sections:
+      - `# Routine Maintenance Report - YYYY-MM-DD`
+      - `## Executive Summary`
+      - `## Critical Findings`
+      - `## High Priority`
+      - `## Medium Priority`
+      - `## Low Priority`
+      - `## Repositories Scanned`
+      - `## Repositories Skipped`
+      - `## Dependency Concerns`
+      - `## Test/Lint/Build Results`
+      - `## Dirty Worktrees`
+      - `## Suggested Next Actions`
+      - `## Appendix: Per-Repo Details`
+- [ ] Include agent/tool-call evidence without exposing raw secrets.
+- [ ] Include commands run and exit statuses when command results exist.
+- [ ] Include skipped checks, incomplete agent runs, and auditor limitations.
+- [ ] Use `None found.` for empty severity sections.
+- [ ] Implement report writer:
+      - create reports directory
+      - write date report
+      - avoid overwriting by using timestamp fallback
+      - update `reports/latest.md`
+- [ ] Implement fresh failure report writer for fatal workflow errors.
+- [ ] Ensure failed runs never reuse stale `latest.md`.
 
 Tests:
 
-- [ ] No-LLM mode does not import or call provider clients.
-- [ ] Missing API key in LLM mode fails clearly or falls back according to
-      documented behavior.
-- [ ] Prompt input is redacted.
-- [ ] Mocked LLM structured output is parsed correctly.
-- [ ] Malformed LLM output falls back to deterministic summary or produces an
-      incomplete-check warning.
+- [ ] Redacts webhook URL.
+- [ ] Redacts token/password/api-key lines.
+- [ ] Redacts authorization headers.
+- [ ] Redacts private key block marker content.
+- [ ] Summary agent input is redacted.
+- [ ] Markdown renderer includes all required sections.
+- [ ] Empty sections use `None found.`.
+- [ ] Report writer updates latest report.
+- [ ] Report writer avoids overwriting existing report.
+- [ ] Failure report is fresh and does not reuse stale `latest.md`.
+- [ ] Golden sample report test uses synthetic agent/tool data only.
 
 Validation:
 
-- [ ] Public demo works without API key.
-- [ ] Optional local LLM run can enrich report summaries.
+- [ ] Generated local report for synthetic agent output is readable and
+      public-safe.
+- [ ] `reports/` generated files remain ignored by git.
 
 Exit criteria:
 
-- [ ] The project demonstrates selective, controlled LLM usage rather than
-      replacing deterministic checks with model calls.
+- [ ] Agentic inspection results produce polished, redacted Markdown reports.
 
 ### Phase 9: Discord Delivery
 
-Goal: deliver a safe summary of the generated report to Discord without exposing
-secrets or requiring Discord for the default demo.
+Goal: deliver a safe summary of the agent-generated report to Discord without
+exposing secrets or requiring Discord for the default demo.
 
 Deliverables:
 
@@ -1007,6 +1165,9 @@ Deliverables:
 - [ ] Support `--summary-only`.
 - [ ] Support safe chunking below Discord message limits.
 - [ ] Redact content immediately before sending.
+- [ ] Include a concise note when findings came from LLM agents and may need
+      human review.
+- [ ] Never send raw tool histories unless they have been bounded and redacted.
 - [ ] Handle HTTP errors with clear messages.
 - [ ] Add CLI command:
       `langgraph-maintenance send reports/latest.md --summary-only`.
@@ -1034,27 +1195,34 @@ Exit criteria:
 
 ### Phase 10: Parallel Fan-Out/Fan-In
 
-Goal: upgrade the graph from sequential repo inspection to portfolio-worthy
-parallel repository branches while preserving deterministic behavior.
+Goal: upgrade the graph from sequential repo inspector agent runs to
+portfolio-worthy parallel repository branches while preserving tool safety and
+deterministic merge behavior.
 
 Deliverables:
 
 - [ ] Implement LangGraph fan-out over enabled repositories.
+- [ ] Run one repo inspector agent branch per enabled repository.
 - [ ] Keep per-repo state isolated.
+- [ ] Keep per-repo tool registries isolated.
 - [ ] Merge per-repo results deterministically.
 - [ ] Preserve stable report ordering by config order or repo name.
 - [ ] Continue when one repo fails unless marked `required`.
 - [ ] Add configurable max concurrency if supported/needed.
-- [ ] Add clear logs for repo start/end/failure.
+- [ ] Add clear logs for repo agent start/end/failure.
+- [ ] Preserve per-repo model/tool-call metadata.
 - [ ] Ensure command timeouts still apply per repo.
+- [ ] Ensure model/tool-call limits apply per repo.
 
 Tests:
 
-- [ ] Parallel workflow returns same normalized findings as sequential workflow
-      for synthetic repos.
+- [ ] Parallel workflow returns same normalized findings as sequential mocked
+      agent workflow for synthetic repos.
 - [ ] One repo failure does not prevent other repo reports.
 - [ ] Required repo failure follows documented behavior.
 - [ ] Report ordering is stable.
+- [ ] Tool-call histories are isolated per repo.
+- [ ] Parallel mocked LLM calls do not require real OpenRouter credentials.
 
 Validation:
 
@@ -1064,11 +1232,12 @@ Validation:
 
 Exit criteria:
 
-- [ ] LangGraph orchestration is visible and meaningful for portfolio review.
+- [ ] LangGraph orchestration is visibly multi-agent and meaningful for
+      portfolio review.
 
 ### Phase 11: Scheduling And Runtime Wrappers
 
-Goal: make the agent usable as a scheduled local maintenance job.
+Goal: make the tool-using agent usable as a scheduled local maintenance job.
 
 Deliverables:
 
@@ -1077,6 +1246,10 @@ Deliverables:
 - [ ] Scripts load local `.env` if present.
 - [ ] Scripts enforce whole-run timeout through
       `LANGGRAPH_MAINTENANCE_TIMEOUT_SECONDS`.
+- [ ] Scripts support optional OpenRouter environment variables without printing
+      them:
+      - `OPENROUTER_API_KEY`
+      - `LANGGRAPH_MAINTENANCE_LLM_MODEL`
 - [ ] Scripts write a fresh failure report when the run fails.
 - [ ] Scripts never send stale `reports/latest.md` after failure.
 - [ ] Add `systemd/langgraph-maintenance-agent.service`.
@@ -1089,6 +1262,7 @@ Tests:
 
 - [ ] `bash -n` passes for shell scripts.
 - [ ] Failure report path can be simulated without invoking real Discord.
+- [ ] Script logging does not print OpenRouter or Discord secrets.
 - [ ] systemd units have expected `OnCalendar=*-*-* 11:00:00`.
 
 Validation:
@@ -1113,18 +1287,26 @@ Deliverables:
       - safety model
       - quick start
       - no-LLM demo
-      - optional LLM mode
+      - OpenRouter-backed agent mode
       - optional Discord mode
       - test commands
 - [ ] Expand `ARCHITECTURE.md` with:
       - graph diagram
       - node descriptions
       - state schema overview
-      - deterministic vs LLM boundary
+      - supervisor/repo-inspector agent architecture
+      - safe tool registry
+      - deterministic safety boundary
       - safety boundary
       - failure handling
 - [ ] Add `docs/portfolio-notes.md` explaining what the project demonstrates.
 - [ ] Add `docs/safety.md` if not already complete.
+- [ ] Add `docs/agent-tools.md` explaining each tool and its safety constraints.
+- [ ] Add `docs/openrouter.md` documenting:
+      - `OPENROUTER_API_KEY`
+      - `LANGGRAPH_MAINTENANCE_LLM_MODEL`
+      - no-LLM fallback
+      - public-safe prompt/input policy
 - [ ] Add synthetic screenshots or terminal output examples.
 - [ ] Add `examples/sample-report.md`.
 - [ ] Add GitHub Actions CI if publishing to GitHub:
@@ -1143,8 +1325,11 @@ Public-safety release checklist:
 - [ ] No raw event logs tracked.
 - [ ] No real Discord webhook URLs.
 - [ ] No API keys.
+- [ ] No OpenRouter API keys.
+- [ ] No real model account metadata.
 - [ ] No private repository names or internal URLs in examples.
 - [ ] No raw output copied from private repositories.
+- [ ] No unredacted tool-call traces copied from private repositories.
 - [ ] `git status --short --ignored` reviewed before publication.
 - [ ] Secret scan command documented and run.
 
