@@ -69,6 +69,7 @@ class CommandResult(BaseModel):
     stdout_excerpt: str = ""
     stderr_excerpt: str = ""
     duration_seconds: float | None = None
+    timeout_seconds: int | None = None
 
 
 class SkippedCheck(BaseModel):

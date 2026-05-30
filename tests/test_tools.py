@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from langgraph_maintenance_agent.config import AppConfig, RepoConfig
+from langgraph_maintenance_agent.config import AppConfig, CheckName, RepoConfig
 from langgraph_maintenance_agent.tools import build_tool_registry
 from langgraph_maintenance_agent.tools.registry import ToolContext
 from langgraph_maintenance_agent.tools.results import ToolLimits
@@ -22,6 +22,7 @@ def make_command_registry(
     repo_root: Path,
     *,
     safe_commands: dict[str, str],
+    checks: list[CheckName] | None = None,
     timeout_seconds: int | None = None,
     limits: ToolLimits | None = None,
 ):
@@ -31,6 +32,7 @@ def make_command_registry(
                 name="demo",
                 path=repo_root,
                 enabled=True,
+                checks=[CheckName.TESTS] if checks is None else checks,
                 safe_commands=safe_commands,
                 timeout_seconds=timeout_seconds,
             )
@@ -211,7 +213,7 @@ def test_configured_safe_command_exit_zero_returns_command_result(
 ) -> None:
     registry = make_command_registry(
         tmp_path,
-        safe_commands={"tests": f"{sys.executable} -c \"print('ok')\""},
+        safe_commands={"tests": f"{sys.executable} -m pytest --version"},
     )
 
     result = registry.call(
@@ -224,20 +226,22 @@ def test_configured_safe_command_exit_zero_returns_command_result(
     command_result = result.data["command_result"]
     assert command_result["exit_code"] == 0
     assert command_result["timed_out"] is False
-    assert command_result["stdout_excerpt"].strip() == "ok"
+    assert "pytest" in command_result["stdout_excerpt"]
 
 
 def test_configured_safe_command_bounds_and_redacts_output(tmp_path: Path) -> None:
     secret_key = "sk-" + "a" * 20
+    test_file = tmp_path / "test_secret_output.py"
+    test_file.write_text(
+        f"def test_secret_output():\n    print('{secret_key}')\n",
+        encoding="utf-8",
+    )
     registry = make_command_registry(
         tmp_path,
         safe_commands={
-            "tests": (
-                f"{sys.executable} -c \"print('{secret_key}'); "
-                "print('x' * 100)\""
-            )
+            "tests": f"{sys.executable} -m pytest -s test_secret_output.py"
         },
-        limits=ToolLimits(max_output_chars=20),
+        limits=ToolLimits(max_output_chars=2_000),
     )
 
     result = registry.call(
@@ -249,18 +253,20 @@ def test_configured_safe_command_bounds_and_redacts_output(tmp_path: Path) -> No
     stdout = result.data["command_result"]["stdout_excerpt"]
     assert secret_key not in stdout
     assert "[redacted]" in stdout
-    assert len(stdout) == 20
+    assert len(stdout) <= 2_000
 
 
 def test_configured_safe_command_runs_in_target_repo(tmp_path: Path) -> None:
+    test_file = tmp_path / "test_cwd_output.py"
+    test_file.write_text(
+        "from pathlib import Path\n"
+        "def test_cwd_output():\n"
+        "    print(Path.cwd())\n",
+        encoding="utf-8",
+    )
     registry = make_command_registry(
         tmp_path,
-        safe_commands={
-            "tests": (
-                f"{sys.executable} -c "
-                "\"from pathlib import Path; print(Path.cwd())\""
-            )
-        },
+        safe_commands={"tests": f"{sys.executable} -m pytest -s test_cwd_output.py"},
     )
 
     result = registry.call(
@@ -269,14 +275,21 @@ def test_configured_safe_command_runs_in_target_repo(tmp_path: Path) -> None:
     )
 
     assert result.ok
-    assert result.data["command_result"]["stdout_excerpt"].strip() == str(tmp_path)
+    assert str(tmp_path) in result.data["command_result"]["stdout_excerpt"]
     assert result.data["command_result"]["working_directory"] == str(tmp_path)
 
 
 def test_configured_safe_command_timeout_is_captured(tmp_path: Path) -> None:
+    test_file = tmp_path / "test_sleep.py"
+    test_file.write_text(
+        "import time\n"
+        "def test_sleep():\n"
+        "    time.sleep(2)\n",
+        encoding="utf-8",
+    )
     registry = make_command_registry(
         tmp_path,
-        safe_commands={"tests": f"{sys.executable} -c \"import time; time.sleep(2)\""},
+        safe_commands={"tests": f"{sys.executable} -m pytest -s test_sleep.py"},
         timeout_seconds=1,
     )
 
@@ -290,18 +303,14 @@ def test_configured_safe_command_timeout_is_captured(tmp_path: Path) -> None:
     command_result = result.data["command_result"]
     assert command_result["timed_out"] is True
     assert command_result["exit_code"] is None
+    assert command_result["timeout_seconds"] == 1
 
 
 def test_unknown_command_label_does_not_execute(tmp_path: Path) -> None:
     marker = tmp_path / "marker"
     registry = make_command_registry(
         tmp_path,
-        safe_commands={
-            "tests": (
-                f"{sys.executable} -c "
-                "\"from pathlib import Path; Path('marker').write_text('bad')\""
-            )
-        },
+        safe_commands={"tests": f"{sys.executable} -m pytest --version"},
     )
 
     result = registry.call(
@@ -313,3 +322,40 @@ def test_unknown_command_label_does_not_execute(tmp_path: Path) -> None:
     assert result.error is not None
     assert result.error.code == "unknown_command_label"
     assert not marker.exists()
+
+
+def test_command_label_not_enabled_does_not_execute(tmp_path: Path) -> None:
+    registry = make_command_registry(
+        tmp_path,
+        checks=[],
+        safe_commands={"tests": f"{sys.executable} -m pytest --version"},
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "tests"},
+    )
+
+    assert not result.ok
+    assert result.error is not None
+    assert result.error.code == "command_not_enabled"
+
+
+def test_python_syntax_command_does_not_write_repo_pycache(tmp_path: Path) -> None:
+    (tmp_path / "syntax_demo.py").write_text("value = 1\n", encoding="utf-8")
+    registry = make_command_registry(
+        tmp_path,
+        checks=[CheckName.PYTHON_SYNTAX],
+        safe_commands={
+            "python-syntax": f"{sys.executable} -m py_compile syntax_demo.py"
+        },
+    )
+
+    result = registry.call(
+        "run_configured_safe_command",
+        {"repo_name": "demo", "command_label": "python-syntax"},
+    )
+
+    assert result.ok
+    assert result.data["command_result"]["exit_code"] == 0
+    assert not (tmp_path / "__pycache__").exists()

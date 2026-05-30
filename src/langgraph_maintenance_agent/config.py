@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import shlex
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -35,25 +35,93 @@ class CheckName(StrEnum):
     PYTHON_SYNTAX = "python-syntax"
 
 
-UNSAFE_COMMAND_LABEL_RE = re.compile(
-    r"(fix|format|upgrade|delete|remove|reset|checkout|commit|clean|migrate|install)",
-    re.IGNORECASE,
+COMMAND_CHECK_LABELS: dict[CheckName, str] = {
+    CheckName.TESTS: "tests",
+    CheckName.LINT: "lint",
+    CheckName.BUILD: "build",
+    CheckName.PYTHON_SYNTAX: "python-syntax",
+}
+
+COMMAND_LABELS = frozenset(COMMAND_CHECK_LABELS.values())
+PYTHON_EXECUTABLE_NAMES = frozenset({"python", "python3", "python3.11", "python3.12"})
+DISALLOWED_RUFF_CHECK_FLAGS = frozenset(
+    {"--fix", "--unsafe-fixes", "--fix-only", "--add-noqa"}
 )
-UNSAFE_COMMAND_PATTERNS = (
-    re.compile(pattern, re.IGNORECASE)
-    for pattern in (
-        r"\brm\s+-rf\b",
-        r"\bgit\s+reset\b",
-        r"\bgit\s+checkout\b",
-        r"\bgit\s+clean\b",
-        r"\bnpm\s+audit\s+fix\b",
-        r"\bpip\s+install\s+-U\b",
-        r"\buv\s+add\b",
-        r"\bpoetry\s+add\b",
-        r"\balembic\s+upgrade\b",
+
+
+class SafeCommandPolicyError(ValueError):
+    """Raised when a configured command is outside the report-only profile."""
+
+
+def allowed_command_labels(checks: list[CheckName]) -> set[str]:
+    """Return command labels enabled by configured checks."""
+
+    return {
+        label
+        for check, label in COMMAND_CHECK_LABELS.items()
+        if check in checks
+    }
+
+
+def parse_safe_command(command: str) -> list[str]:
+    """Parse a configured command into argv."""
+
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        raise SafeCommandPolicyError(str(exc)) from exc
+    if not argv:
+        raise SafeCommandPolicyError("safe command must not be empty")
+    return argv
+
+
+def executable_name(argv: list[str]) -> str:
+    """Return the lowercase basename for argv[0]."""
+
+    return Path(argv[0]).name.lower()
+
+
+def is_python_executable(argv: list[str]) -> bool:
+    """Return whether argv[0] looks like a Python executable."""
+
+    name = executable_name(argv)
+    return name in PYTHON_EXECUTABLE_NAMES or name.startswith("python3.")
+
+
+def validate_safe_command_profile(label: str, command: str) -> list[str]:
+    """Validate a configured command against narrow diagnostic profiles."""
+
+    normalized_label = label.strip()
+    if normalized_label not in COMMAND_LABELS:
+        raise SafeCommandPolicyError(
+            f"unsupported safe command label: {normalized_label}"
+        )
+    argv = parse_safe_command(command)
+    if normalized_label == "tests":
+        if executable_name(argv) == "pytest" or (
+            len(argv) >= 3
+            and is_python_executable(argv)
+            and argv[1:3] == ["-m", "pytest"]
+        ):
+            return argv
+    elif normalized_label == "lint":
+        if executable_name(argv) == "ruff" and len(argv) >= 2 and argv[1] == "check":
+            if DISALLOWED_RUFF_CHECK_FLAGS & set(argv[2:]):
+                raise SafeCommandPolicyError("ruff check fix flags are not allowed")
+            return argv
+    elif normalized_label == "python-syntax":
+        if len(argv) >= 3 and is_python_executable(argv) and argv[1] == "-m":
+            if argv[2] in {"compileall", "py_compile"}:
+                return argv
+    elif normalized_label == "build":
+        if len(argv) >= 3 and is_python_executable(argv) and argv[1:3] == [
+            "-m",
+            "build",
+        ]:
+            return argv
+    raise SafeCommandPolicyError(
+        f"safe command `{normalized_label}` must match an approved diagnostic profile"
     )
-)
-UNSAFE_COMMAND_PATTERN_LIST = tuple(UNSAFE_COMMAND_PATTERNS)
 
 
 class SafeCommand(BaseModel):
@@ -70,8 +138,8 @@ class SafeCommand(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("safe command label must not be empty")
-        if UNSAFE_COMMAND_LABEL_RE.search(normalized):
-            raise ValueError(f"unsafe safe command label: {value}")
+        if normalized not in COMMAND_LABELS:
+            raise ValueError(f"unsupported safe command label: {value}")
         return normalized
 
     @field_validator("command")
@@ -80,9 +148,6 @@ class SafeCommand(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("safe command must not be empty")
-        for pattern in UNSAFE_COMMAND_PATTERN_LIST:
-            if pattern.search(normalized):
-                raise ValueError(f"unsafe command string: {value}")
         return normalized
 
 
@@ -121,6 +186,12 @@ class RepoConfig(BaseModel):
         validated: dict[str, str] = {}
         for label, command in value.items():
             safe_command = SafeCommand(label=label, command=command)
+            try:
+                validate_safe_command_profile(
+                    safe_command.label, safe_command.command
+                )
+            except SafeCommandPolicyError as exc:
+                raise ValueError(str(exc)) from exc
             validated[safe_command.label] = safe_command.command
         return validated
 

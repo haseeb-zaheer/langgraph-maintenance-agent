@@ -89,7 +89,7 @@ repos:
         load_config(config_path)
 
 
-def test_unsafe_safe_command_label_fails(tmp_path: Path) -> None:
+def test_unsupported_safe_command_label_fails(tmp_path: Path) -> None:
     config_path = write_config(
         tmp_path / "repos.yaml",
         """
@@ -102,25 +102,67 @@ repos:
 """,
     )
 
-    with pytest.raises(ConfigError, match="unsafe safe command label"):
+    with pytest.raises(ConfigError, match="unsupported safe command label"):
         load_config(config_path)
 
 
-def test_unsafe_safe_command_string_fails(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git reset --hard",
+        "touch marker",
+        "python -c \"open('x', 'w').write('bad')\"",
+        "ruff format .",
+        "ruff check --fix .",
+        "npm run test",
+    ],
+)
+def test_unsafe_safe_command_string_fails(tmp_path: Path, command: str) -> None:
     config_path = write_config(
         tmp_path / "repos.yaml",
-        """
+        f"""
 repos:
   - name: example
     path: /path/to/example
     enabled: true
     safe_commands:
-      tests: git reset --hard
+      tests: {command}
 """,
     )
 
-    with pytest.raises(ConfigError, match="unsafe command string"):
+    with pytest.raises(ConfigError, match="approved diagnostic profile"):
         load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    ("label", "command"),
+    [
+        ("tests", "python -m pytest --version"),
+        ("tests", "pytest --version"),
+        ("lint", "ruff check --help"),
+        ("python-syntax", "python -m compileall --help"),
+        ("python-syntax", "python -m py_compile README.md"),
+        ("build", "python -m build --help"),
+    ],
+)
+def test_safe_command_profiles_load(
+    tmp_path: Path, label: str, command: str
+) -> None:
+    config_path = write_config(
+        tmp_path / "repos.yaml",
+        f"""
+repos:
+  - name: example
+    path: /path/to/example
+    enabled: true
+    safe_commands:
+      {label}: {command}
+""",
+    )
+
+    config = load_config(config_path)
+
+    assert config.repos[0].safe_commands[label] == command
 
 
 def test_disabled_repo_can_omit_path(tmp_path: Path) -> None:
