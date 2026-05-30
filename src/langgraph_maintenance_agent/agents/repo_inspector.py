@@ -207,10 +207,24 @@ class RepoInspectorAgent:
                         return incomplete_to_repo_result(
                             IncompleteAgentRun(
                                 repo_name=repo.name,
-                        reason=(
-                            "model requested unregistered tool: "
-                            f"{tool_call.name}"
-                        ),
+                                reason=(
+                                    "model requested unregistered tool: "
+                                    f"{tool_call.name}"
+                                ),
+                                stage="tool_dispatch",
+                                tool_calls_made=tool_calls_made,
+                                iterations=iteration,
+                            )
+                        )
+                    requested_repo = tool_call.arguments.get("repo_name")
+                    if requested_repo != repo.name:
+                        return incomplete_to_repo_result(
+                            IncompleteAgentRun(
+                                repo_name=repo.name,
+                                reason=(
+                                    "model requested tool access for a different "
+                                    f"repo: {requested_repo}"
+                                ),
                                 stage="tool_dispatch",
                                 tool_calls_made=tool_calls_made,
                                 iterations=iteration,
@@ -252,8 +266,19 @@ class RepoInspectorAgent:
                             iterations=iteration,
                         )
                     )
+                mismatch = validate_repo_output_matches(repo, output)
+                if mismatch is not None:
+                    return incomplete_to_repo_result(
+                        IncompleteAgentRun(
+                            repo_name=repo.name,
+                            reason=mismatch,
+                            stage="structured_output",
+                            tool_calls_made=tool_calls_made,
+                            iterations=iteration,
+                        )
+                    )
                 return RepoResult(
-                    repo_name=output.repo_name,
+                    repo_name=repo.name,
                     path=str(repo.path) if repo.path is not None else None,
                     findings=output.findings,
                     skipped_checks=output.skipped_checks,
@@ -289,3 +314,22 @@ def checks_include(repo: RepoConfig, check: CheckName) -> bool:
     """Return whether a repo has a check configured."""
 
     return check in repo.checks
+
+
+def validate_repo_output_matches(
+    repo: RepoConfig, output: RepoInspectorOutput
+) -> str | None:
+    """Return a mismatch reason if structured output crosses repo boundaries."""
+
+    if output.repo_name != repo.name:
+        return f"structured output used unexpected repo_name: {output.repo_name}"
+    for finding in output.findings:
+        if finding.repo_name != repo.name:
+            return f"finding used unexpected repo_name: {finding.repo_name}"
+    for skipped in output.skipped_checks:
+        if skipped.repo_name != repo.name:
+            return f"skipped check used unexpected repo_name: {skipped.repo_name}"
+    for error in output.errors:
+        if error.repo_name is not None and error.repo_name != repo.name:
+            return f"agent error used unexpected repo_name: {error.repo_name}"
+    return None

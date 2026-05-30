@@ -29,6 +29,11 @@ def registry_for(tmp_path: Path):
     return build_tool_registry(ToolContext.from_config(config))
 
 
+def registry_for_repos(repos: list[RepoConfig]):
+    config = AppConfig(repos=repos)
+    return build_tool_registry(ToolContext.from_config(config))
+
+
 def test_agent_cannot_execute_unregistered_tool(tmp_path: Path) -> None:
     agent = RepoInspectorAgent(
         tool_registry=registry_for(tmp_path),
@@ -76,6 +81,41 @@ def test_agent_tool_limit_produces_incomplete_result(tmp_path: Path) -> None:
     assert "maximum tool call limit" in result.errors[0].message
 
 
+def test_agent_rejects_tool_call_for_different_repo(tmp_path: Path) -> None:
+    repo_a = tmp_path / "a"
+    repo_b = tmp_path / "b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos(
+            [
+                RepoConfig(name="repo-a", path=repo_a, enabled=True),
+                RepoConfig(name="repo-b", path=repo_b, enabled=True),
+            ]
+        ),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(
+                    tool_calls=[
+                        ChatToolCall(
+                            id="1",
+                            name="list_files",
+                            arguments={"repo_name": "repo-b"},
+                        )
+                    ],
+                    raw={},
+                )
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(RepoConfig(name="repo-a", path=repo_a, enabled=True))
+
+    assert result.repo_name == "repo-a"
+    assert result.errors
+    assert "different repo" in result.errors[0].message
+
+
 def test_agent_malformed_model_output_produces_incomplete_result(
     tmp_path: Path,
 ) -> None:
@@ -88,6 +128,52 @@ def test_agent_malformed_model_output_produces_incomplete_result(
 
     assert result.errors
     assert "malformed structured output" in result.errors[0].message
+
+
+def test_agent_rejects_structured_output_for_wrong_repo(tmp_path: Path) -> None:
+    payload = {
+        "repo_name": "other",
+        "summary": "wrong repo",
+        "findings": [],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for(tmp_path),
+        llm_client=FakeClient(
+            [ChatCompletionResult(content=json.dumps(payload), raw={})]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(RepoConfig(name="demo", path=tmp_path, enabled=True))
+
+    assert result.errors
+    assert "unexpected repo_name" in result.errors[0].message
+
+
+def test_agent_rejects_finding_for_wrong_repo(tmp_path: Path) -> None:
+    payload = {
+        "repo_name": "demo",
+        "summary": "wrong finding repo",
+        "findings": [
+            {
+                "repo_name": "other",
+                "severity": Severity.INFO.value,
+                "category": FindingCategory.DOCS.value,
+                "title": "Docs",
+                "description": "Wrong repo.",
+            }
+        ],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for(tmp_path),
+        llm_client=FakeClient(
+            [ChatCompletionResult(content=json.dumps(payload), raw={})]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(RepoConfig(name="demo", path=tmp_path, enabled=True))
+
+    assert result.errors
+    assert "finding used unexpected repo_name" in result.errors[0].message
 
 
 def test_agent_accepts_structured_output(tmp_path: Path) -> None:
