@@ -4,6 +4,12 @@ Report-only repository maintenance reviews powered by LangGraph, constrained
 local tools, and optional OpenRouter-backed agents. The default public demo runs
 without credentials against a committed synthetic fixture repository.
 
+The full intended workflow uses an LLM for bounded source-code reads,
+evidence-backed findings, and better report summaries. The no-LLM path is for
+credential-free demos, tests, and deterministic fallback runs. Discord delivery
+and Linux systemd scheduling are optional add-ons, not required for normal CLI
+use.
+
 ## Quickstart
 
 Install `uv`, clone this repository, then run:
