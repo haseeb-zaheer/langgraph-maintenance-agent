@@ -215,6 +215,81 @@ def test_agent_accepts_structured_output(tmp_path: Path) -> None:
     assert len(result.findings) == 1
 
 
+def test_agent_ignores_fabricated_command_results(tmp_path: Path) -> None:
+    payload = {
+        "repo_name": "demo",
+        "summary": "fabricated command",
+        "findings": [],
+        "command_results": [
+            {
+                "label": "tests",
+                "command": ["python", "-m", "pytest"],
+                "working_directory": str(tmp_path),
+                "exit_code": 1,
+                "timed_out": False,
+                "stdout_excerpt": "fabricated",
+                "stderr_excerpt": "fabricated",
+                "duration_seconds": 0.1,
+                "timeout_seconds": 300,
+            }
+        ],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for(tmp_path),
+        llm_client=FakeClient(
+            [ChatCompletionResult(content=json.dumps(payload), raw={})]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(RepoConfig(name="demo", path=tmp_path, enabled=True))
+
+    assert result.command_results == []
+    assert not any(finding.command_label == "tests" for finding in result.findings)
+
+
+def test_agent_records_actual_command_tool_result(tmp_path: Path) -> None:
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.TESTS],
+        safe_commands={"tests": f"{sys.executable} -m pytest --version"},
+    )
+    payload = {
+        "repo_name": "demo",
+        "summary": "done",
+        "findings": [],
+        "command_results": [],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(
+                    tool_calls=[
+                        ChatToolCall(
+                            id="1",
+                            name="run_configured_safe_command",
+                            arguments={
+                                "repo_name": "demo",
+                                "command_label": "tests",
+                            },
+                        )
+                    ],
+                    raw={},
+                ),
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert len(result.command_results) == 1
+    assert result.command_results[0].label == "tests"
+    assert result.command_results[0].exit_code == 0
+
+
 def test_no_llm_workflow_dry_run_writes_no_reports(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -287,7 +362,7 @@ repos:
     checks:
       - tests
     safe_commands:
-      tests: {sys.executable} -c "print('ok')"
+      tests: {sys.executable} -m pytest --version
 report:
   output_dir: {tmp_path / "reports"}
 """,
@@ -312,7 +387,7 @@ def test_no_llm_nonzero_command_becomes_finding(tmp_path: Path) -> None:
                     enabled=True,
                     checks=[CheckName.TESTS],
                     safe_commands={
-                        "tests": f"{sys.executable} -c \"import sys; sys.exit(3)\""
+                        "tests": f"{sys.executable} -m pytest missing_test_file.py"
                     },
                 )
             ]
@@ -325,11 +400,11 @@ def test_no_llm_nonzero_command_becomes_finding(tmp_path: Path) -> None:
             path=tmp_path,
             enabled=True,
             checks=[CheckName.TESTS],
-            safe_commands={"tests": f"{sys.executable} -c \"import sys; sys.exit(3)\""},
+            safe_commands={"tests": f"{sys.executable} -m pytest missing_test_file.py"},
         )
     )
 
-    assert result.command_results[0].exit_code == 3
+    assert result.command_results[0].exit_code not in (None, 0)
     assert any(
         finding.title == "tests command failed"
         and finding.command_label == "tests"
@@ -483,6 +558,7 @@ def test_report_includes_redacted_command_results(tmp_path: Path) -> None:
                         stdout_excerpt=f"ok {secret_key}",
                         stderr_excerpt="",
                         duration_seconds=0.01,
+                        timeout_seconds=300,
                     )
                 ],
             )

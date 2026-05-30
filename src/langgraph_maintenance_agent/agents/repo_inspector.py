@@ -11,7 +11,12 @@ from langgraph_maintenance_agent.agents.prompts import (
     REPO_INSPECTOR_SYSTEM_PROMPT,
     repo_inspector_user_prompt,
 )
-from langgraph_maintenance_agent.config import CheckName, RepoConfig
+from langgraph_maintenance_agent.config import (
+    COMMAND_CHECK_LABELS,
+    CheckName,
+    RepoConfig,
+    allowed_command_labels,
+)
 from langgraph_maintenance_agent.llm.openrouter import OpenRouterClient
 from langgraph_maintenance_agent.schemas import (
     AgentError,
@@ -26,13 +31,6 @@ from langgraph_maintenance_agent.schemas import (
 )
 from langgraph_maintenance_agent.tools.registry import ToolRegistry
 from langgraph_maintenance_agent.tools.results import ToolCallRecord, ToolResult
-
-COMMAND_CHECK_LABELS: dict[CheckName, str] = {
-    CheckName.TESTS: "tests",
-    CheckName.LINT: "lint",
-    CheckName.BUILD: "build",
-    CheckName.PYTHON_SYNTAX: "python-syntax",
-}
 
 COMMAND_LABEL_CATEGORIES: dict[str, FindingCategory] = {
     "tests": FindingCategory.TEST,
@@ -218,11 +216,14 @@ class RepoInspectorAgent:
                 "content": repo_inspector_user_prompt(
                     repo_name=repo.name,
                     checks=[check.value for check in repo.checks],
-                    safe_command_labels=list(repo.safe_commands),
+                    safe_command_labels=sorted(
+                        set(repo.safe_commands) & allowed_command_labels(repo.checks)
+                    ),
                     notes=repo.notes,
                 ),
             },
         ]
+        executed_command_results: list[CommandResult] = []
         tool_calls_made = 0
         for iteration in range(1, self.max_iterations + 1):
             try:
@@ -295,6 +296,16 @@ class RepoInspectorAgent:
                                 iterations=iteration,
                             )
                         )
+                    if (
+                        tool_call.name == "run_configured_safe_command"
+                        and result.ok
+                        and "command_result" in result.data
+                    ):
+                        executed_command_results.append(
+                            CommandResult.model_validate(
+                                result.data["command_result"]
+                            )
+                        )
                     messages.append(
                         {
                             "role": "tool",
@@ -333,10 +344,12 @@ class RepoInspectorAgent:
                     path=str(repo.path) if repo.path is not None else None,
                     findings=[
                         *output.findings,
-                        *command_results_findings(repo.name, output.command_results),
+                        *command_results_findings(
+                            repo.name, executed_command_results
+                        ),
                     ],
                     skipped_checks=output.skipped_checks,
-                    command_results=output.command_results,
+                    command_results=executed_command_results,
                     errors=output.errors,
                 )
             messages.append(
@@ -387,8 +400,8 @@ def command_result_findings(
         output_note = "A redacted stdout excerpt was captured."
     if command_result.timed_out:
         timeout_description = "the configured timeout"
-        if command_result.duration_seconds is not None:
-            timeout_description = f"{command_result.duration_seconds:.3f} seconds"
+        if command_result.timeout_seconds is not None:
+            timeout_description = f"{command_result.timeout_seconds} seconds"
         return [
             Finding(
                 repo_name=repo_name,
