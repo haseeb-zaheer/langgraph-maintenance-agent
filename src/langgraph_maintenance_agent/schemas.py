@@ -106,6 +106,40 @@ class RepoResult(BaseModel):
     errors: list[AgentError] = Field(default_factory=list)
 
 
+class RepoInspectorOutput(BaseModel):
+    """Structured final output from a repository inspector agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_name: str
+    summary: str
+    findings: list[Finding] = Field(default_factory=list)
+    skipped_checks: list[SkippedCheck] = Field(default_factory=list)
+    command_results: list[CommandResult] = Field(default_factory=list)
+    errors: list[AgentError] = Field(default_factory=list)
+
+
+class SummaryOutput(BaseModel):
+    """Structured cross-repository summary output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    executive_summary: str
+    next_actions: list[str] = Field(default_factory=list)
+
+
+class IncompleteAgentRun(BaseModel):
+    """Structured marker for an incomplete agent run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_name: str
+    reason: str
+    stage: str
+    tool_calls_made: int = 0
+    iterations: int = 0
+
+
 class DeliveryStatus(BaseModel):
     """Report delivery status for optional destinations."""
 
