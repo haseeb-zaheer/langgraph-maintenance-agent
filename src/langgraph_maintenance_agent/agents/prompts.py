@@ -105,6 +105,38 @@ def source_review_findings_user_prompt(
     )
 
 
+def source_review_repair_user_prompt(
+    *,
+    repo_name: str,
+    validation_error: str,
+    allowed_read_paths: list[str],
+    allowed_metadata_paths: list[str],
+    original_output: str,
+) -> str:
+    """Build the one-shot source-review repair prompt."""
+
+    return "\n".join(
+        [
+            f"Repair source-review findings for configured repo: {repo_name}",
+            "Return corrected structured JSON only.",
+            "Do not request shell access, file access, source reads, generated "
+            "files, secrets, or unregistered tools.",
+            "Do not introduce new evidence paths.",
+            f"Validation error: {validation_error}",
+            "Allowed read evidence paths for non-test-gap findings: "
+            + (", ".join(allowed_read_paths) if allowed_read_paths else "none"),
+            "Allowed metadata paths for test-gap findings: "
+            + (
+                ", ".join(allowed_metadata_paths)
+                if allowed_metadata_paths
+                else "none"
+            ),
+            "Original rejected output, already redacted:",
+            original_output,
+        ]
+    )
+
+
 def summary_user_prompt(*, redacted_payload: str) -> str:
     """Build the cross-repository summary prompt."""
 

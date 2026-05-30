@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -172,6 +173,9 @@ class SourceReviewCoverage(BaseModel):
     skipped_files: int = 0
     generated_files_skipped: int = 0
     review_mode: str = "not-run"
+    validation_status: str = "not-run"
+    validation_error: str | None = None
+    repair_attempted: bool = False
     plan_rationale: str | None = None
     planned: list[SourceReviewTarget] = Field(default_factory=list)
     candidates: list[SourceFileMetadata] = Field(default_factory=list)
@@ -217,6 +221,55 @@ class RepoInspectorOutput(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     skipped_checks: list[SkippedCheck] = Field(default_factory=list)
     command_results: list[CommandResult] = Field(default_factory=list)
+    errors: list[AgentError] = Field(default_factory=list)
+
+
+SourceReviewFindingCategory = Literal[
+    FindingCategory.BUG_RISK,
+    FindingCategory.REFACTOR,
+    FindingCategory.CODE_QUALITY,
+    FindingCategory.TEST_GAP,
+]
+
+
+class SourceReviewFinding(BaseModel):
+    """Strict source-review finding returned by the staged source-review call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_name: str
+    severity: Severity
+    category: SourceReviewFindingCategory
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    evidence_paths: list[str] = Field(min_length=1)
+    suggested_action: str = Field(min_length=1)
+    needs_human_review: bool = False
+
+    def to_finding(self) -> Finding:
+        """Convert a strict source-review finding to the normalized schema."""
+
+        return Finding(
+            repo_name=self.repo_name,
+            severity=self.severity,
+            category=self.category,
+            title=self.title,
+            description=self.description,
+            evidence_paths=self.evidence_paths,
+            suggested_action=self.suggested_action,
+            needs_human_review=self.needs_human_review,
+        )
+
+
+class SourceReviewOutput(BaseModel):
+    """Structured final output from the staged source-review agent call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_name: str
+    summary: str
+    findings: list[SourceReviewFinding] = Field(default_factory=list)
+    skipped_checks: list[SkippedCheck] = Field(default_factory=list)
     errors: list[AgentError] = Field(default_factory=list)
 
 

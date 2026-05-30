@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from langgraph_maintenance_agent.schemas import (
     AgentError,
     CommandResult,
@@ -12,6 +14,7 @@ from langgraph_maintenance_agent.schemas import (
     SkippedCheck,
     SourceFileMetadata,
     SourceReviewCoverage,
+    SourceReviewOutput,
     SourceReviewPlan,
     SourceReviewTarget,
     SummaryOutput,
@@ -153,6 +156,90 @@ def test_source_review_coverage_serialization() -> None:
 
     assert restored.candidate_files == 2
     assert restored.candidates[0].signals == ["api-route"]
+
+
+def test_source_review_output_accepts_valid_finding() -> None:
+    output = SourceReviewOutput.model_validate(
+        {
+            "repo_name": "example",
+            "summary": "Reviewed one file.",
+            "findings": [
+                {
+                    "repo_name": "example",
+                    "severity": Severity.MEDIUM.value,
+                    "category": FindingCategory.BUG_RISK.value,
+                    "title": "Missing validation",
+                    "description": "Input is used directly.",
+                    "evidence_paths": ["src/app.py"],
+                    "suggested_action": "Validate input before use.",
+                }
+            ],
+        }
+    )
+
+    assert output.findings[0].to_finding().category == FindingCategory.BUG_RISK
+
+
+def test_source_review_output_rejects_missing_evidence_paths() -> None:
+    with pytest.raises(ValueError):
+        SourceReviewOutput.model_validate(
+            {
+                "repo_name": "example",
+                "summary": "Bad finding.",
+                "findings": [
+                    {
+                        "repo_name": "example",
+                        "severity": Severity.MEDIUM.value,
+                        "category": FindingCategory.BUG_RISK.value,
+                        "title": "Missing validation",
+                        "description": "Input is used directly.",
+                        "suggested_action": "Validate input before use.",
+                    }
+                ],
+            }
+        )
+
+
+def test_source_review_output_rejects_empty_suggested_action() -> None:
+    with pytest.raises(ValueError):
+        SourceReviewOutput.model_validate(
+            {
+                "repo_name": "example",
+                "summary": "Bad finding.",
+                "findings": [
+                    {
+                        "repo_name": "example",
+                        "severity": Severity.MEDIUM.value,
+                        "category": FindingCategory.BUG_RISK.value,
+                        "title": "Missing validation",
+                        "description": "Input is used directly.",
+                        "evidence_paths": ["src/app.py"],
+                        "suggested_action": "",
+                    }
+                ],
+            }
+        )
+
+
+def test_source_review_output_rejects_unsupported_category() -> None:
+    with pytest.raises(ValueError):
+        SourceReviewOutput.model_validate(
+            {
+                "repo_name": "example",
+                "summary": "Bad finding.",
+                "findings": [
+                    {
+                        "repo_name": "example",
+                        "severity": Severity.MEDIUM.value,
+                        "category": FindingCategory.DOCS.value,
+                        "title": "Docs issue",
+                        "description": "Wrong category for source review.",
+                        "evidence_paths": ["src/app.py"],
+                        "suggested_action": "Use a source category.",
+                    }
+                ],
+            }
+        )
 
 
 def test_delivery_status_serialization() -> None:

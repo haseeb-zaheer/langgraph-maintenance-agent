@@ -35,8 +35,10 @@ from langgraph_maintenance_agent.tools.registry import ToolContext
 class FakeClient:
     def __init__(self, responses: list[ChatCompletionResult]) -> None:
         self.responses = responses
+        self.calls: list[dict[str, Any]] = []
 
-    def chat(self, **_: Any) -> ChatCompletionResult:
+    def chat(self, **kwargs: Any) -> ChatCompletionResult:
+        self.calls.append(kwargs)
         return self.responses.pop(0)
 
 
@@ -332,6 +334,8 @@ def test_agent_requires_source_tools_before_source_review_output(
     } >= {"summarize_source_tree", "list_source_files", "read_source_files"}
     assert result.metadata.source_review is not None
     assert result.metadata.source_review.read_files == 1
+    assert result.metadata.source_review.validation_status == "accepted"
+    assert not result.metadata.source_review.repair_attempted
 
 
 def test_agent_rejects_source_review_plan_for_unlisted_path(tmp_path: Path) -> None:
@@ -361,7 +365,7 @@ def test_agent_rejects_source_review_plan_for_unlisted_path(tmp_path: Path) -> N
     assert "unapproved path" in result.errors[0].message
 
 
-def test_agent_rejects_source_finding_citing_unread_file(tmp_path: Path) -> None:
+def test_agent_repairs_source_finding_citing_unread_file(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
     (tmp_path / "src" / "other.py").write_text("value = 2\n", encoding="utf-8")
@@ -391,12 +395,80 @@ def test_agent_rejects_source_finding_citing_unread_file(tmp_path: Path) -> None
             }
         ],
     }
+    repaired_payload = {
+        "repo_name": "demo",
+        "summary": "repaired citation",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.BUG_RISK.value,
+                "title": "App file issue",
+                "description": "Cites the file that was actually read.",
+                "evidence_paths": ["src/app.py"],
+                "suggested_action": "Review the read file.",
+            }
+        ],
+    }
     agent = RepoInspectorAgent(
         tool_registry=registry_for_repos([repo]),
         llm_client=FakeClient(
             [
                 ChatCompletionResult(content=json.dumps(plan), raw={}),
                 ChatCompletionResult(content=json.dumps(payload), raw={}),
+                ChatCompletionResult(content=json.dumps(repaired_payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert not result.errors
+    assert result.findings[0].evidence_paths == ["src/app.py"]
+    assert result.metadata.source_review is not None
+    assert result.metadata.source_review.validation_status == "repaired"
+    assert result.metadata.source_review.repair_attempted
+    assert [
+        call.tool_name for call in result.metadata.tool_calls
+    ].count("read_source_files") == 1
+
+
+def test_agent_source_review_repair_failure_is_incomplete(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.SOURCE_REVIEW],
+    )
+    plan = {
+        "repo_name": "demo",
+        "rationale": "Read app only",
+        "targets": [{"path": "src/app.py", "reason": "runtime source"}],
+    }
+    bad_payload = {
+        "repo_name": "demo",
+        "summary": "bad citation",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.BUG_RISK.value,
+                "title": "Other file issue",
+                "description": "Cites an unread file.",
+                "evidence_paths": ["src/other.py"],
+                "suggested_action": "Read the file before citing it.",
+            }
+        ],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(content=json.dumps(plan), raw={}),
+                ChatCompletionResult(content=json.dumps(bad_payload), raw={}),
+                ChatCompletionResult(content=json.dumps(bad_payload), raw={}),
             ]
         ),  # type: ignore[arg-type]
     )
@@ -404,7 +476,80 @@ def test_agent_rejects_source_finding_citing_unread_file(tmp_path: Path) -> None
     result = agent.inspect(repo)
 
     assert result.errors
-    assert "unread or unapproved" in result.errors[0].message
+    assert result.errors[0].stage == "source_review_findings_repair"
+    assert result.metadata.source_review is not None
+    assert result.metadata.source_review.validation_status == "rejected"
+    assert result.metadata.source_review.repair_attempted
+    assert "unread or unapproved" in result.metadata.source_review.validation_error
+
+
+def test_agent_repairs_source_finding_without_evidence_paths(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.SOURCE_REVIEW],
+    )
+    plan = {
+        "repo_name": "demo",
+        "rationale": "Read app only",
+        "targets": [{"path": "src/app.py", "reason": "runtime source"}],
+    }
+    bad_payload = {
+        "repo_name": "demo",
+        "summary": "missing evidence",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.REFACTOR.value,
+                "title": "Refactor app",
+                "description": "This lacks source evidence.",
+                "suggested_action": "Refactor it.",
+            }
+        ],
+    }
+    repaired_payload = {
+        "repo_name": "demo",
+        "summary": "repaired evidence",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.REFACTOR.value,
+                "title": "Refactor app",
+                "description": "Now cites the read file.",
+                "evidence_paths": ["src/app.py"],
+                "suggested_action": "Refactor it.",
+            }
+        ],
+    }
+    fake_client = FakeClient(
+        [
+            ChatCompletionResult(content=json.dumps(plan), raw={}),
+            ChatCompletionResult(content=json.dumps(bad_payload), raw={}),
+            ChatCompletionResult(content=json.dumps(repaired_payload), raw={}),
+        ]
+    )
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=fake_client,  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert not result.errors
+    assert result.findings[0].evidence_paths == ["src/app.py"]
+    assert result.metadata.source_review is not None
+    assert result.metadata.source_review.validation_status == "repaired"
+    repair_prompt = fake_client.calls[2]["messages"][1]["content"]
+    assert "Validation error:" in repair_prompt
+    assert "src/app.py" in repair_prompt
+    assert "shell access" in repair_prompt
 
 
 def test_agent_rejects_source_review_finding_without_evidence(

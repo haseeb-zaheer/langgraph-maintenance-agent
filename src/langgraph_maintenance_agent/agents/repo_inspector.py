@@ -14,6 +14,7 @@ from langgraph_maintenance_agent.agents.prompts import (
     repo_inspector_user_prompt,
     source_review_findings_user_prompt,
     source_review_planner_user_prompt,
+    source_review_repair_user_prompt,
 )
 from langgraph_maintenance_agent.config import (
     COMMAND_CHECK_LABELS,
@@ -22,6 +23,8 @@ from langgraph_maintenance_agent.config import (
     allowed_command_labels,
 )
 from langgraph_maintenance_agent.llm.openrouter import OpenRouterClient
+from langgraph_maintenance_agent.reporting.redaction import redact_text
+from langgraph_maintenance_agent.runtime.text import bound_text
 from langgraph_maintenance_agent.schemas import (
     AgentError,
     CommandResult,
@@ -35,6 +38,8 @@ from langgraph_maintenance_agent.schemas import (
     SkippedCheck,
     SourceFileMetadata,
     SourceReviewCoverage,
+    SourceReviewFinding,
+    SourceReviewOutput,
     SourceReviewPlan,
     ToolCallSummary,
 )
@@ -449,72 +454,34 @@ class RepoInspectorAgent:
                 stage="source_review_read",
                 model_name=getattr(self.llm_client, "model", None),
             )
-        try:
-            findings_response = self.llm_client.chat(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": SOURCE_REVIEW_FINDINGS_SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": source_review_findings_user_prompt(
-                            repo_name=repo.name,
-                            plan_and_evidence=json.dumps(
-                                {
-                                    "plan": plan.model_dump(mode="json"),
-                                    "coverage": coverage.model_dump(mode="json"),
-                                    "source_tree_metadata": summary_result.data,
-                                    "read_files": read_result.data.get("files", []),
-                                },
-                                sort_keys=True,
-                            ),
-                        ),
-                    },
-                ],
-                response_schema=RepoInspectorOutput.model_json_schema(),
-            )
-            output = RepoInspectorOutput.model_validate_json(
-                findings_response.content or ""
-            )
-        except Exception as exc:
-            return _source_review_incomplete_result(
-                repo=repo,
-                records=records,
-                coverage=coverage,
-                reason=f"malformed source-review findings output: {exc}",
-                stage="source_review_findings",
-                model_name=getattr(self.llm_client, "model", None),
-            )
-        mismatch = validate_repo_output_matches(repo, output)
-        if mismatch is not None:
-            return _source_review_incomplete_result(
-                repo=repo,
-                records=records,
-                coverage=coverage,
-                reason=mismatch,
-                stage="source_review_findings",
-                model_name=getattr(self.llm_client, "model", None),
-            )
-        source_review_error = validate_source_review_findings(
-            output.findings,
+        metadata_paths = set(read_paths) | {candidate.path for candidate in candidates}
+        source_output_result = _request_source_review_output(
+            client=self.llm_client,
+            repo=repo,
+            plan=plan,
+            coverage=coverage,
+            source_tree_data=summary_result.data,
+            read_file_data=read_result.data.get("files", []),
             read_paths=read_paths,
-            metadata_paths=set(read_paths)
-            | {candidate.path for candidate in candidates},
+            metadata_paths=metadata_paths,
         )
-        if source_review_error is not None:
+        output, coverage, output_error = source_output_result
+        if output_error is not None:
             return _source_review_incomplete_result(
                 repo=repo,
                 records=records,
                 coverage=coverage,
-                reason=source_review_error,
-                stage="source_review_findings",
+                reason=output_error,
+                stage="source_review_findings_repair"
+                if coverage.repair_attempted
+                else "source_review_findings",
                 model_name=getattr(self.llm_client, "model", None),
             )
+        assert output is not None
         return RepoResult(
             repo_name=repo.name,
             path=str(repo.path) if repo.path is not None else None,
-            findings=output.findings,
+            findings=[finding.to_finding() for finding in output.findings],
             skipped_checks=output.skipped_checks,
             errors=output.errors,
             metadata=RepoInspectionMetadata(
@@ -945,6 +912,28 @@ def validate_repo_output_matches(
     return None
 
 
+def validate_source_review_output_matches(
+    repo: RepoConfig, output: SourceReviewOutput
+) -> str | None:
+    """Return a mismatch reason if source-review output crosses repo boundaries."""
+
+    if output.repo_name != repo.name:
+        return f"source-review output used unexpected repo_name: {output.repo_name}"
+    for finding in output.findings:
+        if finding.repo_name != repo.name:
+            return (
+                "source-review finding used unexpected repo_name: "
+                f"{finding.repo_name}"
+            )
+    for skipped in output.skipped_checks:
+        if skipped.repo_name != repo.name:
+            return f"skipped check used unexpected repo_name: {skipped.repo_name}"
+    for error in output.errors:
+        if error.repo_name is not None and error.repo_name != repo.name:
+            return f"agent error used unexpected repo_name: {error.repo_name}"
+    return None
+
+
 def validate_source_review_plan(
     *,
     repo: RepoConfig,
@@ -972,7 +961,7 @@ def validate_source_review_plan(
 
 
 def validate_source_review_findings(
-    findings: list[Finding],
+    findings: list[Finding] | list[SourceReviewFinding],
     *,
     read_paths: set[str] | None = None,
     metadata_paths: set[str] | None = None,
@@ -998,6 +987,159 @@ def validate_source_review_findings(
                     f"path: {path}"
                 )
     return None
+
+
+def _request_source_review_output(
+    *,
+    client: OpenRouterClient,
+    repo: RepoConfig,
+    plan: SourceReviewPlan,
+    coverage: SourceReviewCoverage,
+    source_tree_data: dict[str, Any],
+    read_file_data: list[Any],
+    read_paths: set[str],
+    metadata_paths: set[str],
+) -> tuple[SourceReviewOutput | None, SourceReviewCoverage, str | None]:
+    """Request source-review findings and make one validation repair attempt."""
+
+    prompt_payload = json.dumps(
+        {
+            "plan": plan.model_dump(mode="json"),
+            "coverage": coverage.model_dump(mode="json"),
+            "source_tree_metadata": source_tree_data,
+            "read_files": read_file_data,
+            "allowed_read_evidence_paths": sorted(read_paths),
+            "allowed_metadata_paths_for_test_gap": sorted(metadata_paths),
+        },
+        sort_keys=True,
+    )
+    messages = [
+        {
+            "role": "system",
+            "content": SOURCE_REVIEW_FINDINGS_SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": source_review_findings_user_prompt(
+                repo_name=repo.name,
+                plan_and_evidence=prompt_payload,
+            ),
+        },
+    ]
+    response_content: str | None = None
+    try:
+        response = client.chat(
+            messages=messages,
+            response_schema=SourceReviewOutput.model_json_schema(),
+        )
+        response_content = response.content
+        output = SourceReviewOutput.model_validate_json(response.content or "")
+        validation_error = _validate_source_review_output(
+            repo=repo,
+            output=output,
+            read_paths=read_paths,
+            metadata_paths=metadata_paths,
+        )
+        if validation_error is None:
+            return (
+                output,
+                _coverage_with_validation(coverage, status="accepted"),
+                None,
+            )
+    except Exception as exc:
+        validation_error = f"malformed source-review findings output: {exc}"
+
+    repair_messages = [
+        {
+            "role": "system",
+            "content": SOURCE_REVIEW_FINDINGS_SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": source_review_repair_user_prompt(
+                repo_name=repo.name,
+                validation_error=validation_error,
+                allowed_read_paths=sorted(read_paths),
+                allowed_metadata_paths=sorted(metadata_paths),
+                original_output=_redacted_model_output(response_content),
+            ),
+        },
+    ]
+    try:
+        repair_response = client.chat(
+            messages=repair_messages,
+            response_schema=SourceReviewOutput.model_json_schema(),
+        )
+        repaired = SourceReviewOutput.model_validate_json(
+            repair_response.content or ""
+        )
+        repair_error = _validate_source_review_output(
+            repo=repo,
+            output=repaired,
+            read_paths=read_paths,
+            metadata_paths=metadata_paths,
+        )
+        if repair_error is None:
+            return (
+                repaired,
+                _coverage_with_validation(
+                    coverage,
+                    status="repaired",
+                    repair_attempted=True,
+                ),
+                None,
+            )
+    except Exception as exc:
+        repair_error = f"malformed repaired source-review output: {exc}"
+
+    rejected_coverage = _coverage_with_validation(
+        coverage,
+        status="rejected",
+        validation_error=repair_error,
+        repair_attempted=True,
+    )
+    return None, rejected_coverage, repair_error
+
+
+def _validate_source_review_output(
+    *,
+    repo: RepoConfig,
+    output: SourceReviewOutput,
+    read_paths: set[str],
+    metadata_paths: set[str],
+) -> str | None:
+    mismatch = validate_source_review_output_matches(repo, output)
+    if mismatch is not None:
+        return mismatch
+    return validate_source_review_findings(
+        output.findings,
+        read_paths=read_paths,
+        metadata_paths=metadata_paths,
+    )
+
+
+def _coverage_with_validation(
+    coverage: SourceReviewCoverage,
+    *,
+    status: str,
+    validation_error: str | None = None,
+    repair_attempted: bool = False,
+) -> SourceReviewCoverage:
+    return coverage.model_copy(
+        update={
+            "validation_status": status,
+            "validation_error": redact_text(validation_error)
+            if validation_error
+            else None,
+            "repair_attempted": repair_attempted,
+        }
+    )
+
+
+def _redacted_model_output(content: str | None) -> str:
+    if not content:
+        return "none"
+    return bound_text(redact_text(content), 4_000)
 
 
 def _source_candidates_from_tool_result(result: ToolResult) -> list[SourceFileMetadata]:
