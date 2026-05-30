@@ -22,7 +22,8 @@ Discord delivery, parallel fan-out, and systemd scheduling.
 - Safe file tools skip symlinks, prune sensitive directories, and bound file
   reads before data can reach the model or report.
 - Safe commands are opt-in per repo, parsed with `shlex.split`, and executed
-  with `shell=False` from the configured repo root.
+  with `shell=False` from the configured repo root. They must also match a
+  narrow report-only diagnostic profile.
 - The agent is report-only and must not fix, format, upgrade, commit, reset,
   clean, or delete files in target repositories.
 
@@ -61,7 +62,8 @@ not write report files or send Discord messages.
 ## Safe Commands
 
 `safe_commands` are configured per repo and only run when a matching
-command-style check is enabled. The deterministic mapping is:
+command-style check is enabled. A configured command label by itself is not
+enough to execute. The deterministic mapping is:
 
 - `tests` check -> `safe_commands.tests`
 - `lint` check -> `safe_commands.lint`
@@ -78,7 +80,7 @@ repos:
     checks:
       - tests
     safe_commands:
-      tests: python -c "print('ok')"
+      tests: python -m pytest --version
     timeout_seconds: 300
 ```
 
@@ -86,6 +88,19 @@ Commands are parsed into argv and run with `shell=False`, so shell features such
 as pipes, redirection, variable expansion, and compound commands are not
 supported in this batch. Stdout and stderr are bounded and redacted before they
 enter tool results, workflow state, or reports. Unknown labels do not execute.
+
+Allowed command profiles are intentionally narrow:
+
+- `tests`: `pytest ...` or `python -m pytest ...`
+- `lint`: `ruff check ...` without fix flags
+- `python-syntax`: `python -m compileall ...` or `python -m py_compile ...`
+- `build`: `python -m build ...`
+
+Commands such as `python -c`, package-manager scripts, formatters, fix flags,
+git mutation commands, and ad hoc file writes are rejected during config
+validation. Command caches and temporary directories are redirected outside the
+target repo where supported. Reports include only command results produced by
+actual command tool calls.
 
 ## Agent Tools
 

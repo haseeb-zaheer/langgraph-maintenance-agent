@@ -41,8 +41,10 @@ command execution:
   `python-syntax`.
 - `tools/commands.py` executes only commands explicitly configured for the
   current repo. Commands are parsed with `shlex.split`, run with `shell=False`,
-  use the configured repo path as `cwd`, enforce `timeout_seconds` or a
-  300-second default, and return bounded redacted stdout/stderr excerpts.
+  restricted to approved diagnostic profiles, use the configured repo path as
+  `cwd`, redirect supported temp/cache paths outside the repo, enforce
+  `timeout_seconds` or a 300-second default, and return bounded redacted
+  stdout/stderr excerpts.
 - `graph.py` assembles the sequential supervisor workflow:
   `load_config -> prepare_run -> select_repos -> build_tool_registry ->
   inspect_repo_agent -> normalize_agent_output -> merge_results ->
@@ -68,10 +70,12 @@ structured output that tries to switch to a different configured repository.
 `run_configured_safe_command` is a deterministic safety-boundary tool rather
 than raw shell access. The model can supply only `repo_name` and
 `command_label`; the actual command string comes from validated config for that
-repo. Unknown labels return a safe tool error. Timed-out commands return a
-successful tool envelope with a timed-out `CommandResult` and an incomplete
-reason. Nonzero exits are preserved as command results and normalized into
-findings by the inspector/reporting path.
+repo, and the label must also be enabled by the repo's configured checks.
+Unknown or disabled labels return safe tool errors without execution. Timed-out
+commands return a successful tool envelope with a timed-out `CommandResult` and
+an incomplete reason. Nonzero exits are preserved as command results and
+normalized into findings by the inspector/reporting path. In LLM mode, reported
+command results come only from actual command tool calls, not final model JSON.
 
 ## Source Of Truth
 

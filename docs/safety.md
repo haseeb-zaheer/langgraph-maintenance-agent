@@ -21,18 +21,22 @@ documentation must stay public-safe.
 - Report findings; do not automatically fix them.
 - Do not run formatters, fix commands, migrations, upgrades, cleanup commands,
   or git mutation commands in target repositories.
-- Run only explicitly configured safe commands for the current repo.
+- Run only explicitly configured safe commands for the current repo when the
+  matching check is enabled.
 
 ## Configured Commands
 
 Configured commands are report-only diagnostics. The model can request
 `run_configured_safe_command(repo_name, command_label)`, but it cannot provide a
 raw command string. The command string comes from validated config for that repo,
-is parsed with `shlex.split`, and is executed with `shell=False` in the
-configured repo root.
+is parsed with `shlex.split`, must match an approved diagnostic profile, and is
+executed with `shell=False` in the configured repo root. Supported temp/cache
+environment variables point outside the target repo.
 
 Command output is bounded and redacted before it enters tool results, workflow
 state, report rendering, or model messages. Unknown labels and unparsable
-commands do not execute. Timeouts and nonzero exits are reported for human
-review; the agent does not clean, reset, fix, upgrade, or rewrite the target
-repository after a command result.
+commands do not execute. Commands such as `python -c`, package-manager scripts,
+formatter/fixer invocations, git mutation commands, and ad hoc file writes fail
+config validation. Timeouts and nonzero exits are reported for human review; the
+agent does not clean, reset, fix, upgrade, or rewrite the target repository
+after a command result.

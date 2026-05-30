@@ -16,7 +16,8 @@ Current tools:
 - `detect_dependency_manifests(repo_name)`: Python, Node, Docker, and dbt
   manifests without running package managers.
 - `run_configured_safe_command(repo_name, command_label)`: executes only a
-  matching command from the current repo's validated `safe_commands`.
+  matching enabled-check command from the current repo's validated
+  `safe_commands`.
 
 Blocked paths include `.env`, logs, databases, private keys, generated reports,
 caches, symlinks, path traversal, files outside the repo, oversized files, and
@@ -29,13 +30,16 @@ LLM.
 `run_configured_safe_command` is the only command-execution surface. It does not
 accept arbitrary command strings from the model; it accepts a `command_label`,
 looks that label up in the current repo config, parses the configured string
-with `shlex.split`, and runs it with `shell=False` in the configured repo root.
+with `shlex.split`, verifies it against a narrow report-only diagnostic profile,
+and runs it with `shell=False` in the configured repo root. Supported temp/cache
+environment variables are redirected outside the target repo.
 
 Command behavior:
 
 - Unknown repo names return `unknown_repo`.
 - Unknown labels return `unknown_command_label` and do not execute anything.
-- Invalid command strings that cannot be parsed return `invalid_command`.
+- Labels not enabled by configured checks return `command_not_enabled`.
+- Invalid or disallowed command strings return `invalid_command`.
 - Timeouts return `ok=True` with `status: incomplete`, a timed-out
   `CommandResult`, and any bounded redacted output captured before timeout.
 - Nonzero exits return `ok=True` with a `CommandResult`; repo inspection turns
@@ -43,6 +47,15 @@ Command behavior:
 - Stdout and stderr excerpts are redacted and bounded by
   `ToolLimits.max_output_chars` before entering tool results, graph state,
   report rendering, or model messages.
+- LLM-mode reports keep command results only when they were produced by actual
+  command tool calls.
+
+Allowed profiles:
+
+- `tests`: `pytest ...` or `python -m pytest ...`
+- `lint`: `ruff check ...` without fix flags
+- `python-syntax`: `python -m compileall ...` or `python -m py_compile ...`
+- `build`: `python -m build ...`
 
 The deterministic no-LLM fallback maps command-style checks to labels:
 

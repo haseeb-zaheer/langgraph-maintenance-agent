@@ -1047,16 +1047,20 @@ Deliverables:
 - [x] Redact command output before storing it.
 - [x] Mark timeout as incomplete/skipped check with evidence.
 - [x] Support command strings only from validated `safe_commands`, parsed with
-      `shlex.split` and executed with `shell=False`.
+      `shlex.split`, executed with `shell=False`, and restricted to narrow
+      report-only diagnostic profiles.
 - [x] Prefer argv/non-shell execution for internal built-in commands.
 - [x] Add built-in mapping from configured checks to command labels:
       - `tests`
       - `lint`
       - `build`
       - `python-syntax`
+- [x] Require a matching enabled check before any `safe_commands` label can run.
+- [x] Ignore model-supplied command results unless they came from an actual
+      command tool call.
 - [x] If a configured check has no safe command, mark it skipped with reason.
 - [x] Ensure command execution never runs fix/format/upgrade/cleanup commands.
-- [ ] Add optional writable temp/cache environment support outside the target
+- [x] Add optional writable temp/cache environment support outside the target
       repository for tools that need caches.
 
 Tests:
@@ -1068,13 +1072,16 @@ Tests:
 - [x] Command stdout/stderr is bounded and redacted.
 - [x] Missing safe command is skipped.
 - [x] Working directory is the target repo.
-- [ ] Command runner does not mutate synthetic repo except explicitly expected
+- [x] Command runner does not mutate synthetic repo except explicitly expected
       tool cache behavior in temp dirs.
+- [x] Mutating command fixtures such as `touch`, `python -c`, `ruff --fix`,
+      package scripts, and git mutation commands fail config validation.
+- [x] Model-fabricated command results do not enter repo results or reports.
 
 Validation:
 
 - [x] Synthetic config can run a harmless command such as
-      `python -c "print('ok')"`.
+      `python -m pytest --version`.
 - [x] Unsafe command fixtures fail before execution.
 
 Exit criteria:

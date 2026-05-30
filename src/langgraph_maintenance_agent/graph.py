@@ -190,6 +190,7 @@ def render_markdown_node(state: AgentState) -> AgentState:
                     "",
                     f"- Exit code: {exit_code}",
                     f"- Timed out: {command_result.timed_out}",
+                    f"- Timeout seconds: {command_result.timeout_seconds}",
                     f"- Duration seconds: {command_result.duration_seconds}",
                     "",
                 ]
