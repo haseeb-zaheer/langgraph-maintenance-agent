@@ -1490,7 +1490,7 @@ Validation:
       examples.
 - [x] Run against a synthetic Next.js repo with `.next/` generated artifacts and
       verify generated files are ignored.
-- [ ] Run against one local configured repo after confirming no report content
+- [x] Run against one local configured repo after confirming no report content
       will be committed.
 
 Exit criteria:
