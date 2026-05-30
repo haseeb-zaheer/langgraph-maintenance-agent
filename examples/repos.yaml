@@ -1,8 +1,8 @@
 # Public-safe synthetic example config.
-# Replace these paths locally; do not commit private paths or secrets.
+# Relative repo paths resolve from this config file's directory.
 repos:
-  - name: example-python-service
-    path: /path/to/example-python-service
+  - name: fixture-python-service
+    path: fixture-repo
     enabled: true
     required: false
     timeout_seconds: 300

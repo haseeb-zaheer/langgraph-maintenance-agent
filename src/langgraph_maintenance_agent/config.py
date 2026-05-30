@@ -292,6 +292,26 @@ class AppConfig(BaseModel):
         return self
 
 
+def _resolve_relative_repo_paths(raw_config: dict[str, Any], config_path: Path) -> None:
+    """Resolve relative repo paths against the config file location in-place."""
+
+    repos = raw_config.get("repos")
+    if not isinstance(repos, list):
+        return
+
+    config_dir = config_path.expanduser().resolve().parent
+    for repo in repos:
+        if not isinstance(repo, dict) or "path" not in repo:
+            continue
+        raw_path = repo["path"]
+        if not isinstance(raw_path, str):
+            continue
+        expanded_path = Path(raw_path).expanduser()
+        if expanded_path.is_absolute():
+            continue
+        repo["path"] = str((config_dir / expanded_path).resolve())
+
+
 def load_config(path: Path) -> AppConfig:
     """Load and validate a YAML maintenance config."""
 
@@ -309,6 +329,8 @@ def load_config(path: Path) -> AppConfig:
         raise ConfigError(f"config file is empty: {path}")
     if not isinstance(raw_config, dict):
         raise ConfigError("config root must be a mapping")
+
+    _resolve_relative_repo_paths(raw_config, path)
 
     try:
         return AppConfig.model_validate(raw_config)

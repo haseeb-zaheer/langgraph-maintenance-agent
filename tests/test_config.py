@@ -274,4 +274,25 @@ def test_example_config_is_public_safe_and_valid() -> None:
     config = load_config(Path("examples/repos.yaml"))
 
     assert config.repos
-    assert str(config.repos[0].path).startswith("/path/to/")
+    assert config.repos[0].path == Path("examples/fixture-repo").resolve()
+    assert config.repos[0].path.exists()
+
+
+def test_relative_repo_path_resolves_from_config_file(tmp_path: Path) -> None:
+    repo = tmp_path / "demo-repo"
+    repo.mkdir()
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    config_path = write_config(
+        config_dir / "repos.yaml",
+        """
+repos:
+  - name: relative-demo
+    path: ../demo-repo
+    enabled: true
+""",
+    )
+
+    config = load_config(config_path)
+
+    assert config.repos[0].path == repo.resolve()

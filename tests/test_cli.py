@@ -59,6 +59,26 @@ report:
     assert "report not written" in capsys.readouterr().out
 
 
+def test_public_fixture_demo_runs_without_credentials(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    assert (
+        main(
+            [
+                "run",
+                "--config",
+                "examples/repos.yaml",
+                "--no-llm",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    assert "1 repo(s)" in capsys.readouterr().out
+
+
 def test_run_llm_missing_key_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     repo = tmp_path / "repo"
