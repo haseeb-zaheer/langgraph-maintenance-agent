@@ -28,8 +28,12 @@ from langgraph_maintenance_agent.schemas import (
     CommandResult,
     Finding,
     FindingCategory,
+    ReadSourceFileMetadata,
+    RepoInspectionMetadata,
     RepoResult,
     Severity,
+    SourceReviewCoverage,
+    SourceReviewTarget,
 )
 from langgraph_maintenance_agent.state import AgentState
 
@@ -163,6 +167,57 @@ def test_source_review_findings_render_in_dedicated_sections(tmp_path: Path) -> 
 
     assert "## Bug Risk Review\n\n### `demo` Possible missing validation" in report
     assert "## Refactor Opportunities\n\n### `demo` Extract repeated helper" in report
+
+
+def test_source_review_coverage_renders_without_source_content(tmp_path: Path) -> None:
+    coverage = SourceReviewCoverage(
+        candidate_files=4,
+        planned_files=1,
+        read_files=1,
+        bytes_read=128,
+        skipped_files=0,
+        generated_files_skipped=2,
+        review_mode="llm-planned",
+        plan_rationale="Review API route first.",
+        planned=[
+            SourceReviewTarget(
+                path="src/app/api/chat/route.ts",
+                reason="Request handler.",
+            )
+        ],
+        read=[
+            ReadSourceFileMetadata(
+                path="src/app/api/chat/route.ts",
+                size_bytes=128,
+                bytes_read=128,
+            )
+        ],
+    )
+    state: AgentState = {
+        "selected_repos": [RepoConfig(name="demo", path=tmp_path, enabled=True)],
+        "repo_results": [
+            RepoResult(
+                repo_name="demo",
+                path=str(tmp_path),
+                metadata=RepoInspectionMetadata(source_review=coverage),
+            )
+        ],
+        "findings": [],
+        "skipped_checks": [],
+        "errors": [],
+        "summary": "Summary",
+        "next_actions": [],
+        "run_id": "test",
+        "started_at": "2026-05-30T00:00:00+00:00",
+        "dry_run": True,
+    }
+
+    report = render_markdown_node(state)["report_markdown"] or ""
+
+    assert "## Source Review Coverage" in report
+    assert "- Candidate files: 4" in report
+    assert "`src/app/api/chat/route.ts`" in report
+    assert "export async function" not in report
 
 
 def test_command_result_rendering_is_redacted(tmp_path: Path) -> None:

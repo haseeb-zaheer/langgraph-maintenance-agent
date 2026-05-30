@@ -8,7 +8,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from langgraph_maintenance_agent.config import RepoConfig
-from langgraph_maintenance_agent.runtime.text import bound_text
+from langgraph_maintenance_agent.runtime.text import TRUNCATION_MARKER, bound_text
+from langgraph_maintenance_agent.schemas import (
+    ReadSourceFileMetadata,
+    SkippedSourceFileMetadata,
+    SourceFileMetadata,
+)
 from langgraph_maintenance_agent.tools.registry import ToolContext
 from langgraph_maintenance_agent.tools.results import FileEntry, ToolError, ToolResult
 from langgraph_maintenance_agent.tools.safety import (
@@ -16,6 +21,7 @@ from langgraph_maintenance_agent.tools.safety import (
     contains_nul_bytes,
     is_binary_path,
     is_blocked_relative_path,
+    is_generated_relative_path,
     is_sensitive_path_part,
     normalize_relative_path,
     read_text_excerpt,
@@ -33,6 +39,17 @@ SOURCE_SUFFIXES = {
     ".tsx",
     ".css",
     ".scss",
+}
+LANGUAGE_BY_SUFFIX = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".css": "css",
+    ".scss": "css",
 }
 DEFAULT_SOURCE_PATTERNS = [
     "*.py",
@@ -64,6 +81,7 @@ def summarize_source_tree(context: ToolContext, repo_name: str) -> ToolResult:
         return resolved
     repo, root = resolved
     source_files = _source_files(root, repo)
+    ranked_candidates = _ranked_source_candidates(root, source_files)
     limited_files, total_bytes, truncated = _apply_source_budget(
         root, repo, source_files
     )
@@ -86,14 +104,18 @@ def summarize_source_tree(context: ToolContext, repo_name: str) -> ToolResult:
             "languages": _language_counts(suffix_counts),
             "framework_signals": _framework_signals(root),
             "candidate_files": [
-                FileEntry(path=path.as_posix(), size_bytes=(root / path).stat().st_size)
-                .model_dump()
-                for path in limited_files
+                candidate.model_dump(mode="json")
+                for candidate in ranked_candidates[: repo.source_review_max_files]
+            ],
+            "ranked_candidates": [
+                candidate.model_dump(mode="json")
+                for candidate in ranked_candidates[: repo.source_review_max_files]
             ],
             "total_source_files": len(source_files),
             "budgeted_source_files": len(limited_files),
             "budgeted_bytes": total_bytes,
             "truncated": truncated,
+            "generated_files_skipped": _count_generated_files(root),
         },
     )
 
@@ -116,21 +138,34 @@ def list_source_files(
             for path in files
             if any(fnmatch.fnmatch(path.as_posix(), pattern) for pattern in patterns)
         ]
-    limited_files, total_bytes, truncated = _apply_source_budget(root, repo, files)
+    ranked_candidates = _ranked_source_candidates(root, files)
+    ordered_files = [Path(candidate.path) for candidate in ranked_candidates]
+    limited_files, total_bytes, truncated = _apply_source_budget(
+        root, repo, ordered_files
+    )
     entries = [
-        FileEntry(path=path.as_posix(), size_bytes=(root / path).stat().st_size)
-        .model_dump()
+        FileEntry(
+            path=path.as_posix(),
+            size_bytes=(root / path).stat().st_size,
+        ).model_dump()
         for path in limited_files
     ]
+    limited_set = {path.as_posix() for path in limited_files}
     return ToolResult(
         tool_name="list_source_files",
         repo_name=repo_name,
         ok=True,
         data={
             "files": entries,
+            "ranked_candidates": [
+                candidate.model_dump(mode="json")
+                for candidate in ranked_candidates
+                if candidate.path in limited_set
+            ],
             "total_matching_files": len(files),
             "budgeted_bytes": total_bytes,
             "truncated": truncated,
+            "generated_files_skipped": _count_generated_files(root),
         },
     )
 
@@ -170,6 +205,95 @@ def read_source_file(
                 path.stat().st_size,
                 repo.source_review_max_bytes_per_file,
             ),
+        },
+    )
+
+
+def read_source_files(
+    context: ToolContext,
+    repo_name: str,
+    relative_paths: list[str],
+) -> ToolResult:
+    """Read a bounded batch of planned source-code files."""
+
+    try:
+        repo = context.repo_config(repo_name)
+        root = context.repo_root(repo_name)
+    except KeyError as exc:
+        return ToolResult(
+            tool_name="read_source_files",
+            repo_name=repo_name,
+            ok=False,
+            error=ToolError(code="unknown_repo", message=str(exc)),
+        )
+    contents: list[dict[str, object]] = []
+    read: list[ReadSourceFileMetadata] = []
+    skipped: list[SkippedSourceFileMetadata] = []
+    total_bytes = 0
+    for relative_path in relative_paths[: repo.source_review_max_plan_files]:
+        try:
+            path = _assert_safe_source_path(root, repo, relative_path)
+            size = path.stat().st_size
+            remaining = repo.source_review_max_total_bytes - total_bytes
+            if remaining <= 0:
+                skipped.append(
+                    SkippedSourceFileMetadata(
+                        path=Path(relative_path).as_posix(),
+                        reason="total source-review byte budget exhausted",
+                    )
+                )
+                continue
+            max_bytes = min(repo.source_review_max_bytes_per_file, remaining)
+            raw_text, truncated = read_text_excerpt(path, max_bytes)
+            text = redact_sensitive_lines(raw_text)
+            bytes_read = min(size, max_bytes)
+            total_bytes += bytes_read
+            normalized = normalize_relative_path(relative_path).as_posix()
+            content = (
+                bound_text(text, max_bytes)
+                if max_bytes > len(TRUNCATION_MARKER)
+                else text[:max_bytes]
+            )
+            contents.append(
+                {
+                    "path": normalized,
+                    "content": content,
+                    "truncated": truncated or size > max_bytes,
+                    "bytes_read": bytes_read,
+                }
+            )
+            read.append(
+                ReadSourceFileMetadata(
+                    path=normalized,
+                    size_bytes=size,
+                    bytes_read=bytes_read,
+                    truncated=truncated or size > max_bytes,
+                )
+            )
+        except (OSError, UnicodeError, UnsafePathError) as exc:
+            skipped.append(
+                SkippedSourceFileMetadata(
+                    path=Path(relative_path).as_posix(),
+                    reason=str(exc),
+                )
+            )
+    for relative_path in relative_paths[repo.source_review_max_plan_files :]:
+        skipped.append(
+            SkippedSourceFileMetadata(
+                path=Path(relative_path).as_posix(),
+                reason="exceeds source_review_max_plan_files",
+            )
+        )
+    return ToolResult(
+        tool_name="read_source_files",
+        repo_name=repo_name,
+        ok=True,
+        data={
+            "files": contents,
+            "read": [item.model_dump(mode="json") for item in read],
+            "skipped": [item.model_dump(mode="json") for item in skipped],
+            "bytes_read": total_bytes,
+            "total_byte_budget": repo.source_review_max_total_bytes,
         },
     )
 
@@ -284,6 +408,104 @@ def _apply_source_budget(
         limited.append(path)
         total_bytes += size
     return limited, total_bytes, len(limited) < len(files)
+
+
+def _ranked_source_candidates(
+    root: Path, files: list[Path]
+) -> list[SourceFileMetadata]:
+    candidates = [_source_file_metadata(root, path, files) for path in files]
+    return sorted(candidates, key=lambda item: (-item.priority, item.path))
+
+
+def _source_file_metadata(
+    root: Path, path: Path, all_files: list[Path]
+) -> SourceFileMetadata:
+    signals = _source_signals(path)
+    priority = _source_priority(path, signals)
+    return SourceFileMetadata(
+        path=path.as_posix(),
+        size_bytes=(root / path).stat().st_size,
+        language=LANGUAGE_BY_SUFFIX.get(path.suffix.lower(), "unknown"),
+        signals=signals,
+        priority=priority,
+        nearby_test=_has_nearby_test(path, all_files),
+    )
+
+
+def _source_signals(path: Path) -> list[str]:
+    text = path.as_posix().lower()
+    name = path.name.lower()
+    signals: list[str] = []
+    if "/api/" in f"/{text}" or name in {"route.ts", "route.tsx", "route.js"}:
+        signals.append("api-route")
+    if name in {"sitemap.ts", "sitemap.js", "robots.ts", "robots.js"}:
+        signals.append("crawler-runtime")
+    for label, needles in {
+        "auth": ("auth", "session", "jwt", "login"),
+        "rate-limit": ("rate", "limit", "throttle"),
+        "request-response": ("route", "router", "controller", "handler", "endpoint"),
+        "environment": ("env", "config", "settings"),
+        "network": ("fetch", "http", "client", "api"),
+        "filesystem": ("fs", "file", "path", "storage"),
+        "runtime-glue": ("middleware", "server", "service", "adapter"),
+        "test": ("test_", ".test.", ".spec.", "__tests__"),
+    }.items():
+        if any(needle in text for needle in needles):
+            signals.append(label)
+    return sorted(set(signals))
+
+
+def _source_priority(path: Path, signals: list[str]) -> int:
+    score = 10
+    weights = {
+        "api-route": 90,
+        "auth": 35,
+        "rate-limit": 35,
+        "request-response": 30,
+        "environment": 25,
+        "network": 25,
+        "filesystem": 20,
+        "crawler-runtime": 20,
+        "runtime-glue": 20,
+        "test": -15,
+    }
+    for signal in signals:
+        score += weights.get(signal, 0)
+    if path.suffix.lower() in {".py", ".ts", ".tsx", ".js", ".jsx"}:
+        score += 5
+    if path.suffix.lower() in {".css", ".scss"}:
+        score -= 20
+    if path.name.lower() in {"page.tsx", "layout.tsx"}:
+        score -= 5
+    return score
+
+
+def _has_nearby_test(path: Path, all_files: list[Path]) -> bool:
+    stem = path.stem.replace("test_", "").replace(".test", "").replace(".spec", "")
+    candidates = {item.as_posix().lower() for item in all_files}
+    if any(part in {"tests", "test", "__tests__"} for part in path.parts):
+        return True
+    names = {
+        f"test_{stem}.py",
+        f"{stem}_test.py",
+        f"{stem}.test.ts",
+        f"{stem}.test.tsx",
+        f"{stem}.spec.ts",
+        f"{stem}.spec.tsx",
+        f"{stem}.test.js",
+        f"{stem}.spec.js",
+    }
+    return any(
+        candidate.endswith(name.lower()) for candidate in candidates for name in names
+    )
+
+
+def _count_generated_files(root: Path) -> int:
+    count = 0
+    for path in root.rglob("*"):
+        if path.is_file() and is_generated_relative_path(path.relative_to(root)):
+            count += 1
+    return count
 
 
 def _assert_safe_source_path(root: Path, repo: RepoConfig, relative_path: str) -> Path:

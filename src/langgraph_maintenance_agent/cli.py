@@ -47,7 +47,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--provider", default="openrouter")
     run.add_argument("--dry-run", action="store_true")
-    run.add_argument("--max-tool-calls", type=int, default=12)
+    run.add_argument(
+        "--max-tool-calls",
+        type=int,
+        default=80,
+        help=(
+            "Emergency cap for generic LLM tool loops; source-review depth is "
+            "controlled by source budgets."
+        ),
+    )
     run.add_argument("--max-agent-iterations", type=int, default=6)
     run.add_argument("--max-concurrency", type=int, default=4)
     delivery = run.add_mutually_exclusive_group()

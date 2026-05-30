@@ -26,20 +26,24 @@ documentation must stay public-safe.
 
 ## Source Code Review
 
-Source review is report-only. The agent may read bounded source-code files only
-through `summarize_source_tree`, `list_source_files`, and `read_source_file`.
-Those tools accept repo names and relative paths only, enforce configured repo
-roots, reject traversal and symlinks, and redact sensitive-looking lines before
-content reaches model messages, state, reports, or Discord.
+Source review is report-only. The agent maps approved candidates, asks the LLM
+for a structured review plan, validates planned paths deterministically, then
+reads bounded source-code files only through `read_source_file` or
+`read_source_files`. Source tools accept repo names and relative paths only,
+enforce configured repo roots, reject traversal and symlinks, and redact
+sensitive-looking lines before content reaches model messages, state, reports,
+or Discord.
 
 Built-in exclusions block generated artifacts and dependencies, including
 `.next/`, source maps, `node_modules/`, `dist/`, `build/`, coverage output,
 caches, vendored directories, minified bundles, logs, databases, raw reports,
 and private key material. These exclusions are mandatory in the current phase.
 
-Semantic bug/refactor/test-gap review requires LLM mode. In no-LLM mode, source
-review is marked skipped/incomplete rather than pretending deterministic tools
-understood code behavior.
+Semantic bug/refactor/test-gap review requires LLM mode. Findings are accepted
+only when they use approved source-review categories, include a suggested human
+action, and cite read evidence paths. Test-gap findings may cite source-tree or
+test-root metadata. In no-LLM mode, source review is marked skipped/incomplete
+rather than pretending deterministic tools understood code behavior.
 
 ## Configured Commands
 

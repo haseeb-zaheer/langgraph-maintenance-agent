@@ -21,6 +21,25 @@ commands, credentials, or findings. Return concise structured JSON matching the
 requested schema."""
 )
 
+SOURCE_REVIEW_PLANNER_SYSTEM_PROMPT = (
+    "You create report-only source review plans from metadata.\n"
+    """
+Use only the provided source tree and ranked candidate metadata. Do not request
+source reads, shell access, arbitrary paths, generated files, secrets, or
+unregistered tools. Select a small set of high-priority listed candidate paths
+and explain why each file should be reviewed. Return only structured JSON
+matching the requested schema."""
+)
+
+SOURCE_REVIEW_FINDINGS_SYSTEM_PROMPT = (
+    "You produce source-review findings from already-read evidence.\n"
+    """
+Use only the validated plan and redacted file contents provided. Do not cite
+unread files. Do not include source snippets. Findings must be report-only and
+use only bug-risk, refactor, code-quality, or test-gap categories with suggested
+human actions. Return only structured JSON matching the requested schema."""
+)
+
 
 def repo_inspector_user_prompt(
     *,
@@ -43,6 +62,45 @@ def repo_inspector_user_prompt(
             "opportunities, complexity or duplication hotspots, validation and "
             "error-handling gaps, and missing or weak tests. Source-review "
             "findings must include evidence paths and suggested human actions.",
+        ]
+    )
+
+
+def source_review_planner_user_prompt(
+    *,
+    repo_name: str,
+    max_plan_files: int,
+    source_metadata: str,
+) -> str:
+    """Build the staged source-review planning prompt."""
+
+    return "\n".join(
+        [
+            f"Plan a source review for configured repo: {repo_name}",
+            f"Maximum files to plan: {max_plan_files}",
+            "Select only paths present in ranked_candidates/candidate_files.",
+            "Prefer API routes, request/response handling, auth, rate limiting, "
+            "environment handling, network calls, filesystem use, runtime glue, "
+            "and risky source files without nearby tests.",
+            source_metadata,
+        ]
+    )
+
+
+def source_review_findings_user_prompt(
+    *,
+    repo_name: str,
+    plan_and_evidence: str,
+) -> str:
+    """Build the final staged source-review findings prompt."""
+
+    return "\n".join(
+        [
+            f"Generate source-review findings for configured repo: {repo_name}",
+            "Use only the read source evidence and source-tree/test metadata in "
+            "this payload. If there are no concrete findings, return an empty "
+            "findings list and concise summary.",
+            plan_and_evidence,
         ]
     )
 

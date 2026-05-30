@@ -30,6 +30,7 @@ REPORT_HEADINGS = [
     "Refactor Opportunities",
     "Code Quality Notes",
     "Test Gap Notes",
+    "Source Review Coverage",
     "Test/Lint/Build Results",
     "Command Results",
     "Dirty Worktrees",
@@ -112,6 +113,9 @@ def render_report(
     )
     sections["Test Gap Notes"].extend(
         _render_category_findings(findings, FindingCategory.TEST_GAP)
+    )
+    sections["Source Review Coverage"].extend(
+        _render_source_review_coverage(repo_results)
     )
     command_results = _render_command_results(repo_results)
     sections["Test/Lint/Build Results"].extend(command_results)
@@ -375,6 +379,20 @@ def _render_appendix(
             if tool_call.error_code:
                 detail += f"; error: `{tool_call.error_code}`"
             lines.append(detail + ")")
+        if result.metadata.source_review is not None:
+            coverage = result.metadata.source_review
+            lines.append(
+                "- Source review planned: "
+                + ", ".join(f"`{target.path}`" for target in coverage.planned)
+                if coverage.planned
+                else "- Source review planned: none"
+            )
+            lines.append(
+                "- Source review read: "
+                + ", ".join(f"`{item.path}`" for item in coverage.read)
+                if coverage.read
+                else "- Source review read: none"
+            )
         for skipped in skipped_by_repo.get(result.repo_name, []):
             lines.append(f"- Skipped `{skipped.check_name}`: {skipped.reason}")
         for error in errors_by_repo.get(result.repo_name, []):
@@ -387,6 +405,42 @@ def _render_appendix(
             f"- Workflow recoverable error at `{error.stage or 'unknown'}`: "
             f"{error.message}"
         )
+    return lines
+
+
+def _render_source_review_coverage(repo_results: list[RepoResult]) -> list[str]:
+    lines: list[str] = []
+    for result in repo_results:
+        coverage = result.metadata.source_review
+        if coverage is None:
+            continue
+        lines.extend(
+            [
+                f"### `{result.repo_name}`",
+                "",
+                f"- Candidate files: {coverage.candidate_files}",
+                f"- Planned files: {coverage.planned_files}",
+                f"- Files read: {coverage.read_files}",
+                f"- Bytes read: {coverage.bytes_read}",
+                f"- Skipped planned files: {coverage.skipped_files}",
+                f"- Generated files skipped: {coverage.generated_files_skipped}",
+                f"- Review mode: `{coverage.review_mode}`",
+            ]
+        )
+        if coverage.plan_rationale:
+            lines.append(f"- Plan rationale: {coverage.plan_rationale}")
+        if coverage.planned:
+            planned = ", ".join(f"`{target.path}`" for target in coverage.planned)
+            lines.append(f"- Planned paths: {planned}")
+        if coverage.read:
+            read = ", ".join(f"`{item.path}`" for item in coverage.read)
+            lines.append(f"- Read paths: {read}")
+        if coverage.skipped:
+            skipped = ", ".join(
+                f"`{item.path}` ({item.reason})" for item in coverage.skipped
+            )
+            lines.append(f"- Skipped paths: {skipped}")
+        lines.append("")
     return lines
 
 

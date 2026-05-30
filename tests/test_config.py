@@ -43,6 +43,7 @@ report:
     assert config.repos[0].checks == [CheckName.GIT_STATUS, CheckName.DOCS]
     assert config.report.output_dir == Path("reports")
     assert config.repos[0].source_review_max_files == 20
+    assert config.repos[0].source_review_max_plan_files == 12
 
 
 def test_missing_config_file_fails(tmp_path: Path) -> None:
@@ -111,6 +112,7 @@ repos:
     source_exclude_patterns:
       - "src/generated/*"
     source_review_max_files: 5
+    source_review_max_plan_files: 4
     source_review_max_bytes_per_file: 2000
     source_review_max_total_bytes: 10000
     source_review_max_snippets: 3
@@ -128,6 +130,7 @@ repos:
     ]
     assert repo.source_roots == ["src", "tests"]
     assert repo.source_review_max_files == 5
+    assert repo.source_review_max_plan_files == 4
 
 
 @pytest.mark.parametrize(

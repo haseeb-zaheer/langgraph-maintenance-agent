@@ -101,6 +101,7 @@ systemd timer / manual CLI
             -> read_safe_file
             -> list_source_files
             -> read_source_file
+            -> read_source_files
             -> summarize_source_tree
             -> search_static_markers
             -> detect_dependency_manifests
@@ -191,6 +192,9 @@ Required tools:
 - `read_source_file(repo_name, relative_path)`: read bounded source-code files
   for review; reject sensitive, generated, dependency, binary, oversized, and
   out-of-repo paths.
+- `read_source_files(repo_name, relative_paths)`: read only validated planned
+  source files in a batch; return read/skipped metadata per path without
+  failing the whole batch.
 - `summarize_source_tree(repo_name)`: return public-safe source tree metadata
   such as languages, framework signals, high-level directories, and candidate
   files for review without dumping full contents.
@@ -1497,6 +1501,109 @@ Exit criteria:
 
 - [x] A configured repo scan can produce useful report-only source-code
       improvement suggestions based on bounded code reads.
+
+### Phase 14: Planned Source Review Workflow
+
+Goal: make semantic source review deterministic and auditable by separating
+source mapping, candidate ranking, review planning, bounded batch reads, and
+evidence-backed findings.
+
+Scope:
+
+- LLM-backed source review is the default semantic path when credentials are
+  available.
+- No-LLM mode remains available for tests and public demos, but it must mark
+  semantic source review as skipped/incomplete.
+- Source review depth is controlled by source budgets and validated planned
+  files, not by a low global tool-call cap.
+- The deterministic layer must reject generated, sensitive, unlisted, unread,
+  or cross-repo source evidence.
+
+Deliverables:
+
+- [x] Add typed schemas for `SourceReviewPlan`, `SourceReviewTarget`,
+      `SourceReviewCoverage`, ranked candidates, read source-file metadata, and
+      skipped source-file metadata.
+- [x] Add per-repo source coverage metadata for candidate files, planned files,
+      read files, bytes read, skipped planned files, generated files skipped,
+      review mode, plan rationale, and planned/read/skipped paths.
+- [x] Add `source_review_max_plan_files` config with default `12`.
+- [x] Rank source-review candidates with priority signals for Next.js API
+      routes, route handlers, auth, rate-limit, request/response,
+      environment, fetch/network, filesystem, sitemap, robots, runtime glue,
+      tests, and nearby-test status.
+- [x] Keep generated/dependency/cache/source-map files excluded from source
+      candidates and source reads.
+- [x] Add `read_source_files(repo_name, relative_paths)` to batch-read planned
+      files with independent read/skipped results.
+- [x] Enforce per-file and total source-review byte budgets during batch reads.
+- [x] Redact source content before model/state/report use.
+- [x] Add a dedicated source-review planning prompt that uses only source
+      metadata and requires structured output.
+- [x] Validate plans against the approved ranked candidate set.
+- [x] Record malformed, empty, generated, or unlisted plans as incomplete
+      source-review results with actionable errors.
+- [x] Add a final source-review findings prompt that uses only the validated
+      plan and read evidence.
+- [x] Accept source findings only for `bug-risk`, `refactor`, `code-quality`,
+      and `test-gap` categories.
+- [x] Require source findings to include suggested human actions.
+- [x] Reject non-test-gap findings that cite files not actually read.
+- [x] Allow test-gap findings to cite source-tree/test-root metadata.
+- [x] Raise the default `--max-tool-calls` emergency cap so normal source
+      review is governed by source budgets instead of a low fixed cap.
+- [x] Add `Source Review Coverage` to Markdown reports and appendix metadata
+      without rendering raw source content.
+- [x] Keep Discord summaries concise and snippet-free by using existing compact
+      summary extraction and report redaction.
+- [x] Update `README.md`, `docs/agent-tools.md`, `docs/safety.md`,
+      `workflow.md`, and `examples/sample-report.md`.
+
+Tests:
+
+- [x] Schema serialization covers source-review plan and coverage models.
+- [x] Config defaults and validation cover `source_review_max_plan_files`.
+- [x] Candidate ranking prioritizes Next.js API routes above CSS/simple page
+      files.
+- [x] Candidate ranking prioritizes Python router/service-style files above
+      low-signal files.
+- [x] Generated `.next` files and source maps never rank as candidates.
+- [x] Batch source reads handle mixed valid/invalid paths without failing the
+      whole batch.
+- [x] Batch source reads enforce total byte budgets.
+- [x] Batch source reads reject traversal/sensitive/generated paths through
+      existing source safety checks.
+- [x] Batch source reads redact sensitive-looking lines.
+- [x] Valid mocked source-review plans are accepted.
+- [x] Unlisted planned paths are rejected.
+- [x] Malformed plans become incomplete source-review results.
+- [x] Findings citing unread files are rejected.
+- [x] Valid source findings are accepted when they cite read files.
+- [x] No-LLM mode reports semantic source review as skipped.
+- [x] Source coverage renders in reports without source snippets.
+
+Validation:
+
+- [x] `uv run pytest tests/test_schemas.py tests/test_config.py tests/test_tools.py tests/test_agent_workflow.py tests/test_reporting.py`
+- [x] `uv run ruff check .`
+- [x] `uv run mypy src`
+- [x] `uv run pytest`
+- [x] `uv run langgraph-maintenance validate-config examples/repos.yaml`
+- [x] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run --max-concurrency 2`
+- [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
+- [x] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
+- [x] Secret scan reviewed before publication.
+- [ ] Optional local LLM scan against `/home/haseeb/repositories/haseeb-web/ai-portfolio`
+      was run with a temporary config and report output kept uncommitted.
+
+Exit criteria:
+
+- [x] LLM source scans follow a deterministic staged flow from source metadata
+      through validated planning, bounded reads, and read-evidence-only
+      findings.
+- [x] Full project validation checklist passes, except the optional local LLM
+      scan remains intentionally unchecked because it requires private
+      credentials and would generate an uncommitted local report.
 
 ## Open Questions
 

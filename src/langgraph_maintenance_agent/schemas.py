@@ -108,6 +108,77 @@ class ToolCallSummary(BaseModel):
     error_code: str | None = None
 
 
+class SourceReviewTarget(BaseModel):
+    """One source file selected for staged LLM review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    reason: str
+
+
+class SourceReviewPlan(BaseModel):
+    """Validated LLM source-review plan produced before source reads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repo_name: str
+    rationale: str
+    targets: list[SourceReviewTarget] = Field(default_factory=list)
+
+
+class SourceFileMetadata(BaseModel):
+    """Public-safe source file candidate metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    size_bytes: int
+    language: str
+    signals: list[str] = Field(default_factory=list)
+    priority: int = 0
+    nearby_test: bool = False
+
+
+class ReadSourceFileMetadata(BaseModel):
+    """Metadata for a source file actually read for review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    size_bytes: int
+    bytes_read: int
+    truncated: bool = False
+
+
+class SkippedSourceFileMetadata(BaseModel):
+    """Metadata for a planned source file that was skipped."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    reason: str
+
+
+class SourceReviewCoverage(BaseModel):
+    """Coverage summary for one staged source-review run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_files: int = 0
+    planned_files: int = 0
+    read_files: int = 0
+    bytes_read: int = 0
+    skipped_files: int = 0
+    generated_files_skipped: int = 0
+    review_mode: str = "not-run"
+    plan_rationale: str | None = None
+    planned: list[SourceReviewTarget] = Field(default_factory=list)
+    candidates: list[SourceFileMetadata] = Field(default_factory=list)
+    read: list[ReadSourceFileMetadata] = Field(default_factory=list)
+    skipped: list[SkippedSourceFileMetadata] = Field(default_factory=list)
+
+
 class RepoInspectionMetadata(BaseModel):
     """Public-safe metadata for one repo inspector branch."""
 
@@ -118,6 +189,7 @@ class RepoInspectionMetadata(BaseModel):
     iterations: int = 0
     model_provider: str | None = None
     model_name: str | None = None
+    source_review: SourceReviewCoverage | None = None
 
 
 class RepoResult(BaseModel):

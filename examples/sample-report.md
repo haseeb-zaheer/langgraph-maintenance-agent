@@ -50,6 +50,21 @@ None found.
 - `example-python-service`: synthetic edge case lacks focused coverage in
   `tests/test_parser.py`.
 
+## Source Review Coverage
+
+### `example-python-service`
+
+- Candidate files: 4
+- Planned files: 2
+- Files read: 2
+- Bytes read: 4096
+- Skipped planned files: 0
+- Generated files skipped: 3
+- Review mode: `llm-planned`
+- Plan rationale: Synthetic API and parser files were highest-signal examples.
+- Planned paths: `src/api.py`, `src/parser.py`
+- Read paths: `src/api.py`, `src/parser.py`
+
 ## Test/Lint/Build Results
 
 None found.

@@ -19,6 +19,7 @@ from langgraph_maintenance_agent.tools.search import search_static_markers
 from langgraph_maintenance_agent.tools.source import (
     list_source_files,
     read_source_file,
+    read_source_files,
     summarize_source_tree,
 )
 
@@ -121,6 +122,22 @@ def build_tool_registry(context: ToolContext) -> ToolRegistry:
                     ["repo_name", "relative_path"],
                 ),
                 func=partial(read_source_file, context),
+            ),
+            RegisteredTool(
+                name="read_source_files",
+                description=(
+                    "Read a bounded batch of approved planned source-code files."
+                ),
+                parameters=params(
+                    {
+                        "relative_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        }
+                    },
+                    ["repo_name", "relative_paths"],
+                ),
+                func=partial(read_source_files, context),
             ),
             RegisteredTool(
                 name="detect_dependency_manifests",

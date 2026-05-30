@@ -172,6 +172,7 @@ class RepoConfig(BaseModel):
     source_include_patterns: list[str] = Field(default_factory=list)
     source_exclude_patterns: list[str] = Field(default_factory=list)
     source_review_max_files: int = 20
+    source_review_max_plan_files: int = 12
     source_review_max_bytes_per_file: int = 12_000
     source_review_max_total_bytes: int = 80_000
     source_review_max_snippets: int = 8
@@ -193,6 +194,7 @@ class RepoConfig(BaseModel):
 
     @field_validator(
         "source_review_max_files",
+        "source_review_max_plan_files",
         "source_review_max_bytes_per_file",
         "source_review_max_total_bytes",
         "source_review_max_snippets",

@@ -146,7 +146,7 @@ def inspect_repo_branch_node(state: AgentState) -> AgentState:
         agent = RepoInspectorAgent(
             tool_registry=registry,
             llm_client=llm_client,
-            max_tool_calls=state.get("max_tool_calls", 12),
+            max_tool_calls=state.get("max_tool_calls", 80),
             max_iterations=state.get("max_agent_iterations", 6),
         )
         result = agent.inspect(repo)
@@ -464,7 +464,7 @@ def run_workflow(
     dry_run: bool = False,
     use_llm: bool = False,
     provider: str = "openrouter",
-    max_tool_calls: int = 12,
+    max_tool_calls: int = 80,
     max_agent_iterations: int = 6,
     max_concurrency: int = 4,
     send_discord: bool | None = None,

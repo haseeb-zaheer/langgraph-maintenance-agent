@@ -18,6 +18,7 @@ repos:
     source_roots:
       - src
       - tests
+    source_review_max_plan_files: 12
     source_review_max_files: 20
     source_review_max_bytes_per_file: 12000
     source_review_max_total_bytes: 80000

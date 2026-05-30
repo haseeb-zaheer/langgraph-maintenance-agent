@@ -297,6 +297,16 @@ def test_agent_requires_source_tools_before_source_review_output(
             }
         ],
     }
+    plan = {
+        "repo_name": "demo",
+        "rationale": "Review the only available runtime source file.",
+        "targets": [
+            {
+                "path": "src/app.py",
+                "reason": "Contains arithmetic logic without nearby tests.",
+            }
+        ],
+    }
     repo = RepoConfig(
         name="demo",
         path=tmp_path,
@@ -307,30 +317,7 @@ def test_agent_requires_source_tools_before_source_review_output(
         tool_registry=registry_for_repos([repo]),
         llm_client=FakeClient(
             [
-                ChatCompletionResult(content=json.dumps(payload), raw={}),
-                ChatCompletionResult(
-                    tool_calls=[
-                        ChatToolCall(
-                            id="1",
-                            name="summarize_source_tree",
-                            arguments={"repo_name": "demo"},
-                        ),
-                        ChatToolCall(
-                            id="2",
-                            name="list_source_files",
-                            arguments={"repo_name": "demo"},
-                        ),
-                        ChatToolCall(
-                            id="3",
-                            name="read_source_file",
-                            arguments={
-                                "repo_name": "demo",
-                                "relative_path": "src/app.py",
-                            },
-                        ),
-                    ],
-                    raw={},
-                ),
+                ChatCompletionResult(content=json.dumps(plan), raw={}),
                 ChatCompletionResult(content=json.dumps(payload), raw={}),
             ]
         ),  # type: ignore[arg-type]
@@ -342,7 +329,82 @@ def test_agent_requires_source_tools_before_source_review_output(
     assert result.findings[0].category == FindingCategory.BUG_RISK
     assert {
         call.tool_name for call in result.metadata.tool_calls
-    } >= {"summarize_source_tree", "list_source_files", "read_source_file"}
+    } >= {"summarize_source_tree", "list_source_files", "read_source_files"}
+    assert result.metadata.source_review is not None
+    assert result.metadata.source_review.read_files == 1
+
+
+def test_agent_rejects_source_review_plan_for_unlisted_path(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.SOURCE_REVIEW],
+    )
+    plan = {
+        "repo_name": "demo",
+        "rationale": "Bad path",
+        "targets": [{"path": ".next/generated.ts", "reason": "bad"}],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [ChatCompletionResult(content=json.dumps(plan), raw={})]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert result.errors
+    assert "unapproved path" in result.errors[0].message
+
+
+def test_agent_rejects_source_finding_citing_unread_file(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "other.py").write_text("value = 2\n", encoding="utf-8")
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.SOURCE_REVIEW],
+    )
+    plan = {
+        "repo_name": "demo",
+        "rationale": "Read app only",
+        "targets": [{"path": "src/app.py", "reason": "runtime source"}],
+    }
+    payload = {
+        "repo_name": "demo",
+        "summary": "bad citation",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.BUG_RISK.value,
+                "title": "Other file issue",
+                "description": "Cites an unread file.",
+                "evidence_paths": ["src/other.py"],
+                "suggested_action": "Read the file before citing it.",
+            }
+        ],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(content=json.dumps(plan), raw={}),
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert result.errors
+    assert "unread or unapproved" in result.errors[0].message
 
 
 def test_agent_rejects_source_review_finding_without_evidence(

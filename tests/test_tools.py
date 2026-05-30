@@ -264,6 +264,52 @@ def test_list_source_files_respects_budget_and_excludes_generated(
     assert [entry["path"] for entry in result.data["files"]] == ["src/app.py"]
 
 
+def test_nextjs_api_route_ranks_above_css_and_page(tmp_path: Path) -> None:
+    api_dir = tmp_path / "src" / "app" / "api" / "chat"
+    api_dir.mkdir(parents=True)
+    api_dir.joinpath("route.ts").write_text("export async function POST() {}\n")
+    page = tmp_path / "src" / "app" / "page.tsx"
+    page.write_text("export default function Page() { return null; }\n")
+    css = tmp_path / "src" / "app" / "styles.css"
+    css.write_text(".page { color: red; }\n")
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call("list_source_files", {"repo_name": "demo"})
+
+    assert result.ok
+    paths = [entry["path"] for entry in result.data["ranked_candidates"]]
+    assert paths[0] == "src/app/api/chat/route.ts"
+    assert paths.index("src/app/api/chat/route.ts") < paths.index(
+        "src/app/styles.css"
+    )
+
+
+def test_python_router_file_ranks_above_low_signal_file(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "router.py").write_text("def route():\n    return None\n")
+    (tmp_path / "src" / "constants.py").write_text("VALUE = 1\n")
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call("list_source_files", {"repo_name": "demo"})
+
+    assert result.ok
+    paths = [entry["path"] for entry in result.data["ranked_candidates"]]
+    assert paths[0] == "src/router.py"
+
+
+def test_source_maps_never_rank(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.ts").write_text("export const value = 1;\n")
+    (tmp_path / "src" / "bundle.js.map").write_text("{}\n")
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call("list_source_files", {"repo_name": "demo"})
+
+    assert result.ok
+    paths = [entry["path"] for entry in result.data["ranked_candidates"]]
+    assert "src/bundle.js.map" not in paths
+
+
 def test_read_source_file_reads_approved_source_and_redacts(
     tmp_path: Path,
 ) -> None:
@@ -282,6 +328,63 @@ def test_read_source_file_reads_approved_source_and_redacts(
     assert result.ok
     assert "secret" not in result.data["content"]
     assert "[redacted sensitive line]" in result.data["content"]
+
+
+def test_read_source_files_returns_mixed_read_and_skipped(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("TOKEN=secret", encoding="utf-8")
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call(
+        "read_source_files",
+        {
+            "repo_name": "demo",
+            "relative_paths": ["src/app.py", ".env", "../outside.py"],
+        },
+    )
+
+    assert result.ok
+    assert [item["path"] for item in result.data["read"]] == ["src/app.py"]
+    assert len(result.data["skipped"]) == 2
+
+
+def test_read_source_files_enforces_total_byte_budget(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("a" * 8, encoding="utf-8")
+    (tmp_path / "src" / "b.py").write_text("b" * 8, encoding="utf-8")
+    registry = make_source_registry(
+        tmp_path,
+        source_review_max_bytes_per_file=20,
+        source_review_max_total_bytes=10,
+    )
+
+    result = registry.call(
+        "read_source_files",
+        {"repo_name": "demo", "relative_paths": ["src/a.py", "src/b.py"]},
+    )
+
+    assert result.ok
+    assert result.data["bytes_read"] == 10
+    assert result.data["read"][1]["truncated"]
+
+
+def test_read_source_files_redacts_sensitive_lines(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text(
+        "TOKEN = 'secret'\nprint('ok')\n",
+        encoding="utf-8",
+    )
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call(
+        "read_source_files",
+        {"repo_name": "demo", "relative_paths": ["src/app.py"]},
+    )
+
+    assert result.ok
+    assert "secret" not in result.data["files"][0]["content"]
+    assert "[redacted sensitive line]" in result.data["files"][0]["content"]
 
 
 @pytest.mark.parametrize(

@@ -31,6 +31,16 @@ redacted examples and synthetic sample reports.
 
 - The agent must be report-only unless a user explicitly starts a separate
   implementation workflow.
+- For maintenance scans and source-code review, prefer LLM-backed agentic runs
+  by default. Use `--llm`/OpenRouter-backed inspection unless the user
+  explicitly asks for `--no-llm`, credentials are unavailable, or the task is a
+  test/public-demo path that intentionally verifies deterministic fallback.
+- Do not treat no-LLM mode as equivalent to agentic review. In no-LLM mode,
+  semantic source-code review must be reported as skipped or incomplete rather
+  than simulated.
+- Source-review depth is governed by configured source budgets and validated
+  plans, not by a low global tool-call cap. Keep `max_tool_calls` as an
+  emergency guard for generic tool loops and runaway behavior.
 - Only scan repositories explicitly configured in the project config.
 - Do not infer or crawl every sibling directory under a repositories folder.
 - Preserve dirty worktrees in target repositories. Report dirty state; do not

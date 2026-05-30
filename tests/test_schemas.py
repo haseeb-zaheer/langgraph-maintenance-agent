@@ -10,6 +10,10 @@ from langgraph_maintenance_agent.schemas import (
     RepoResult,
     Severity,
     SkippedCheck,
+    SourceFileMetadata,
+    SourceReviewCoverage,
+    SourceReviewPlan,
+    SourceReviewTarget,
     SummaryOutput,
     ToolCallSummary,
 )
@@ -106,6 +110,49 @@ def test_repo_result_metadata_serialization() -> None:
 
     assert restored.metadata.tool_calls_made == 1
     assert restored.metadata.tool_calls[0].tool_name == "git_status"
+
+
+def test_source_review_plan_serialization() -> None:
+    plan = SourceReviewPlan(
+        repo_name="example",
+        rationale="Review API and config glue.",
+        targets=[
+            SourceReviewTarget(
+                path="src/app/api/chat/route.ts",
+                reason="API route with request handling.",
+            )
+        ],
+    )
+
+    assert SourceReviewPlan.model_validate(plan.model_dump(mode="json")) == plan
+
+
+def test_source_review_coverage_serialization() -> None:
+    coverage = SourceReviewCoverage(
+        candidate_files=2,
+        planned_files=1,
+        read_files=1,
+        bytes_read=512,
+        skipped_files=0,
+        generated_files_skipped=3,
+        review_mode="llm-planned",
+        plan_rationale="Review high-risk route.",
+        candidates=[
+            SourceFileMetadata(
+                path="src/app/api/chat/route.ts",
+                size_bytes=512,
+                language="typescript",
+                signals=["api-route"],
+                priority=105,
+                nearby_test=False,
+            )
+        ],
+    )
+
+    restored = SourceReviewCoverage.model_validate(coverage.model_dump(mode="json"))
+
+    assert restored.candidate_files == 2
+    assert restored.candidates[0].signals == ["api-route"]
 
 
 def test_delivery_status_serialization() -> None:
