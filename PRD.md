@@ -1633,66 +1633,67 @@ Scope:
 
 Deliverables:
 
-- [ ] Add strict `SourceReviewFinding` and `SourceReviewOutput` schemas for the
+- [x] Add strict `SourceReviewFinding` and `SourceReviewOutput` schemas for the
       final staged source-review findings call.
-- [ ] Require source findings to include non-empty evidence paths and
+- [x] Require source findings to include non-empty evidence paths and
       non-empty suggested actions at schema-validation time.
-- [ ] Restrict source finding categories to `bug-risk`, `refactor`,
+- [x] Restrict source finding categories to `bug-risk`, `refactor`,
       `code-quality`, and `test-gap` at schema-validation time.
-- [ ] Convert accepted source-review findings into normalized `Finding`
+- [x] Convert accepted source-review findings into normalized `Finding`
       records before storing `RepoResult`.
-- [ ] Keep deterministic validation for read-path enforcement, metadata
+- [x] Keep deterministic validation for read-path enforcement, metadata
       exceptions for test-gap findings, repo matching, and sensitive/generated
       path rejection.
-- [ ] Add exactly one repair retry for malformed or validation-rejected
+- [x] Add exactly one repair retry for malformed or validation-rejected
       source-review output.
-- [ ] Include the validation error, allowed read evidence paths, allowed
+- [x] Include the validation error, allowed read evidence paths, allowed
       metadata paths for test-gap findings, and redacted original model output
       in the repair prompt.
-- [ ] Ensure repair never calls source read tools or expands allowed evidence.
-- [ ] Record accepted, repaired, and rejected source-review validation state in
+- [x] Ensure repair never calls source read tools or expands allowed evidence.
+- [x] Record accepted, repaired, and rejected source-review validation state in
       `SourceReviewCoverage`.
-- [ ] Render validation status, repair attempt state, and redacted validation
+- [x] Render validation status, repair attempt state, and redacted validation
       errors in `Source Review Coverage` and appendix metadata.
-- [ ] Update `README.md`, `docs/agent-tools.md`, `docs/safety.md`,
+- [x] Update `README.md`, `docs/agent-tools.md`, `docs/safety.md`,
       `workflow.md`, and `examples/sample-report.md`.
 
 Tests:
 
-- [ ] Strict source-review schema accepts valid source findings.
-- [ ] Strict source-review schema rejects missing evidence paths.
-- [ ] Strict source-review schema rejects empty suggested actions.
-- [ ] Strict source-review schema rejects unsupported source categories.
-- [ ] Valid source output is accepted and converted to normalized `Finding`.
-- [ ] Missing evidence output succeeds after one repair when corrected.
-- [ ] Unread evidence output succeeds after one repair when corrected.
-- [ ] Repair failure produces incomplete result at
+- [x] Strict source-review schema accepts valid source findings.
+- [x] Strict source-review schema rejects missing evidence paths.
+- [x] Strict source-review schema rejects empty suggested actions.
+- [x] Strict source-review schema rejects unsupported source categories.
+- [x] Valid source output is accepted and converted to normalized `Finding`.
+- [x] Missing evidence output succeeds after one repair when corrected.
+- [x] Unread evidence output succeeds after one repair when corrected.
+- [x] Repair failure produces incomplete result at
       `source_review_findings_repair`.
-- [ ] Repair prompt does not request arbitrary shell or filesystem access.
-- [ ] Repair does not call `read_source_files` again.
-- [ ] Coverage renders accepted, repaired, and rejected validation states.
-- [ ] Discord summaries remain source-snippet-free.
+- [x] Repair prompt does not request arbitrary shell or filesystem access.
+- [x] Repair does not call `read_source_files` again.
+- [x] Coverage renders accepted, repaired, and rejected validation states.
+- [x] Discord summaries remain source-snippet-free.
 
 Validation:
 
-- [ ] `uv run pytest`
-- [ ] `uv run ruff check .`
-- [ ] `uv run mypy src`
-- [ ] `uv run langgraph-maintenance validate-config examples/repos.yaml`
-- [ ] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run --max-concurrency 2`
-- [ ] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
-- [ ] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
-- [ ] Secret scan reviewed before publication.
-- [ ] Optional local LLM scan against
+- [x] `uv run pytest`
+- [x] `uv run ruff check .`
+- [x] `uv run mypy src`
+- [x] `uv run langgraph-maintenance validate-config examples/repos.yaml`
+- [x] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run --max-concurrency 2`
+- [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
+- [x] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
+- [x] Secret scan reviewed before publication.
+- [x] Optional local LLM scan against
       `/home/haseeb/repositories/haseeb-web/ai-portfolio` was run with a
-      temporary config and report output kept uncommitted.
+      temporary config and report output kept uncommitted. The scan completed
+      with 5 findings and source-review validation status `accepted`.
 
 Exit criteria:
 
-- [ ] Staged source review uses strict source-only structured output.
-- [ ] One-shot repair can correct fixable source-review output errors without
+- [x] Staged source review uses strict source-only structured output.
+- [x] One-shot repair can correct fixable source-review output errors without
       weakening deterministic evidence validation.
-- [ ] Rejected source-review output is reported with clear validation metadata
+- [x] Rejected source-review output is reported with clear validation metadata
       and no raw source/model dumps.
 
 ## Open Questions
