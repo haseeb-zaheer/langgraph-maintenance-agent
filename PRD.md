@@ -345,7 +345,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Add `.env.example` with placeholders only.
 - [x] Add `README.md`.
 - [x] Add `ARCHITECTURE.md`.
-- [x] Add license decision before publishing.
+- [x] Add MIT license before publishing.
 
 ### Core Dependencies
 
@@ -384,7 +384,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Reject unknown check names unless explicitly allowed as custom checks.
 - [x] Reject unsafe command names such as `fix`, `format`, `upgrade`, `delete`,
       `reset`, `checkout`, `commit`, or `clean`.
-- [x] Provide `examples/repos.yaml` with synthetic public-safe paths.
+- [x] Provide `examples/repos.yaml` with a committed synthetic fixture repo.
 - [x] Never include real private webhook URLs or tokens in config.
 
 ### LangGraph State Design
@@ -569,7 +569,7 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Generated reports are ignored by default.
 - [x] Raw event logs are ignored.
 - [x] Test fixtures contain only synthetic data.
-- [x] Example configs use fake paths and placeholders.
+- [x] Example configs use committed fixtures or clearly synthetic placeholders.
 - [x] Redaction covers common secret names.
 - [x] Redaction covers Discord webhook URL patterns.
 - [x] Redaction covers authorization headers.
@@ -606,9 +606,9 @@ The safety boundary must be enforced in code, not only prompts:
 
 ### CLI Requirements
 
-- [x] `langgraph-maintenance run --config config/repos.yaml`.
+- [x] `langgraph-maintenance run --config examples/repos.yaml`.
 - [x] `langgraph-maintenance send reports/latest.md`.
-- [x] `langgraph-maintenance validate-config config/repos.yaml`.
+- [x] `langgraph-maintenance validate-config examples/repos.yaml`.
 - [ ] `langgraph-maintenance render-sample-report`.
 - [x] Support `--summary-only`.
 - [x] Support `--dry-run`.
@@ -712,8 +712,7 @@ Deliverables:
       secret redaction, and report-only behavior.
 - [x] Add `examples/repos.yaml` using synthetic paths only.
 - [x] Add `examples/sample-report.md` with synthetic findings only.
-- [x] Add a license file or explicitly document that license selection is
-      pending before publication.
+- [x] Add an MIT license file and package metadata before publication.
 
 Implementation notes:
 
@@ -1593,11 +1592,11 @@ Validation:
 - [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
 - [x] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
 - [x] Secret scan reviewed before publication.
-- [x] Optional local LLM scan against `/home/haseeb/repositories/haseeb-web/ai-portfolio`
-      was run with a temporary config and report output kept uncommitted. The
-      workflow completed and wrote a local report; deterministic validation
-      correctly marked source review incomplete when the model returned a
-      source finding without evidence paths.
+- [x] Optional local LLM scan against a private local repository was run with a
+      temporary config and report output kept uncommitted. The workflow
+      completed and wrote a local report; deterministic validation correctly
+      marked source review incomplete when the model returned a source finding
+      without evidence paths.
 
 Exit criteria:
 
@@ -1681,10 +1680,9 @@ Validation:
 - [x] `uv run langgraph-maintenance validate-config examples/repos.yaml`
 - [x] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run --max-concurrency 2`
 - [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh`
-- [x] `systemd-analyze verify systemd/langgraph-maintenance-agent.service systemd/langgraph-maintenance-agent.timer`
+- [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh scripts/install_systemd_user_units.sh`
 - [x] Secret scan reviewed before publication.
-- [x] Optional local LLM scan against
-      `/home/haseeb/repositories/haseeb-web/ai-portfolio` was run with a
+- [x] Optional local LLM scan against a private local repository was run with a
       temporary config and report output kept uncommitted. The scan completed
       with 5 findings and source-review validation status `accepted`.
 
@@ -1695,6 +1693,98 @@ Exit criteria:
       weakening deterministic evidence validation.
 - [x] Rejected source-review output is reported with clear validation metadata
       and no raw source/model dumps.
+
+### Phase 16: Public Launch Readiness
+
+Goal: make the repository safe and practical for public users to clone,
+validate, and run without private paths, private credentials, or local-only
+assumptions.
+
+Initial blockers tracked for this phase:
+
+- [x] Hardcoded personal absolute home-directory paths existed in runtime
+      scripts, systemd units, tests, and prior validation notes.
+- [x] License selection was pending.
+- [x] `examples/repos.yaml` pointed at a placeholder path instead of a working
+      committed demo repository.
+- [x] README still emphasized internal development status over a fresh-clone
+      public quickstart.
+- [x] CI was missing.
+- [x] Some scanner-triggering test variable names used generic `secret`
+      terminology even when values were synthetic.
+- [x] PRD validation notes included private local repository paths.
+
+Deliverables:
+
+- [x] Add this public-launch readiness phase and keep it as the live checklist.
+- [x] Add MIT `LICENSE`.
+- [x] Add package license metadata.
+- [x] Update README license section to MIT.
+- [x] Remove stale future README/ARCHITECTURE wording from `AGENTS.md`.
+- [x] Make `scripts/run_maintenance_check.sh` derive `PROJECT_DIR` from script
+      location.
+- [x] Make `scripts/run_and_send.sh` derive `PROJECT_DIR` from script location.
+- [x] Preserve `.env` loading, timeout behavior, failure report generation, and
+      no-stale-Discord behavior in scripts.
+- [x] Replace committed systemd hardcoded paths with `{{PROJECT_DIR}}`
+      placeholders.
+- [x] Add `scripts/install_systemd_user_units.sh` to render and install
+      user-level Linux systemd units from the current clone path.
+- [x] Label systemd as optional Linux scheduling in README and architecture
+      docs.
+- [x] Document macOS and Windows users can run the CLI manually or use their OS
+      scheduler.
+- [x] Add `examples/fixture-repo/` with synthetic docs, Python source, tests,
+      and package metadata.
+- [x] Point `examples/repos.yaml` at the committed fixture repo.
+- [x] Resolve relative repo paths relative to the config file location.
+- [x] Add tests for relative-path resolution and fixture config validation.
+- [x] Rewrite README around fresh-clone quickstart, LLM mode, Discord delivery,
+      custom repo config, safe commands, source budgets, optional systemd, and
+      validation commands.
+- [x] Add GitHub Actions CI for `uv sync`, tests, ruff, and mypy.
+- [x] Document package validation commands: `uv build` and
+      `uv run langgraph-maintenance --help`.
+- [x] Rename scanner-noisy synthetic redaction variables where practical while
+      preserving redaction coverage.
+- [x] Generalize private local validation paths in PRD.
+- [x] Confirm ignored local files such as `.env`, generated reports, caches, and
+      local configs remain untracked.
+
+Final validation:
+
+- [x] `uv sync` passed on 2026-05-31.
+- [x] `uv run pytest` passed on 2026-05-31: 156 tests passed.
+- [x] `uv run ruff check .` passed on 2026-05-31.
+- [x] `uv run mypy src` passed on 2026-05-31: no issues in 28 source files.
+- [x] `uv build` passed on 2026-05-31 and built sdist plus wheel under ignored
+      `dist/`.
+- [x] `uv run langgraph-maintenance --help` passed on 2026-05-31.
+- [x] `uv run langgraph-maintenance validate-config examples/repos.yaml` passed
+      on 2026-05-31 with 1/1 repos enabled.
+- [x] `uv run langgraph-maintenance run --config examples/repos.yaml --no-llm --dry-run`
+      passed on 2026-05-31 with 1 repo and no report written.
+- [x] `bash -n scripts/run_maintenance_check.sh scripts/run_and_send.sh scripts/install_systemd_user_units.sh`
+      passed on 2026-05-31.
+- [x] `git status --short --ignored` reviewed on 2026-05-31. Tracked changes are
+      launch-readiness files only; ignored local `.env`, generated reports,
+      caches, local config, and `dist/` remain untracked.
+- [x] Public repo audit scanner with `--history` passed on 2026-05-31 with 0
+      blockers, 0 high findings, 22 medium history-term findings, and 0 low
+      findings.
+- [x] Manual review of scanner hits found no real secrets/private data. Current
+      file blockers were eliminated; remaining history hits are redaction
+      tests, `.env.example`, placeholder OpenRouter variable names, and
+      public-safety documentation terms.
+
+Exit criteria:
+
+- [x] A fresh clone can validate and run the fixture demo without credentials.
+- [x] Public docs contain no private local paths, credentials, or stale launch
+      blockers.
+- [x] CI, package build, tests, lint, and typecheck pass locally and CI workflow
+      is committed.
+- [x] Audit scan results are reviewed and documented in this checklist.
 
 ## Open Questions
 
