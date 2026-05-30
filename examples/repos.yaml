@@ -11,7 +11,16 @@ repos:
       - docs
       - static-search
       - dependency-metadata
+      # Source review requires --llm mode. In --no-llm mode it is reported as
+      # skipped instead of producing semantic findings.
+      - source-review
     safe_commands: {}
+    source_roots:
+      - src
+      - tests
+    source_review_max_files: 20
+    source_review_max_bytes_per_file: 12000
+    source_review_max_total_bytes: 80000
     notes: "Synthetic public-safe example repository."
 
 report:
@@ -19,4 +28,3 @@ report:
   filename_prefix: routine-maintenance
   update_latest: true
   discord_enabled: false
-

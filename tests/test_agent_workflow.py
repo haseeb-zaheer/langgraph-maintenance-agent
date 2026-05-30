@@ -274,6 +274,107 @@ def test_agent_requires_evidence_tools_before_structured_output(
     assert not result.errors
 
 
+def test_agent_requires_source_tools_before_source_review_output(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text(
+        "def divide(a, b):\n    return a / b\n",
+        encoding="utf-8",
+    )
+    payload = {
+        "repo_name": "demo",
+        "summary": "source reviewed",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.BUG_RISK.value,
+                "title": "Division lacks zero guard",
+                "description": "The helper divides by an input without validation.",
+                "evidence_paths": ["src/app.py"],
+                "suggested_action": "Add validation or document allowed inputs.",
+            }
+        ],
+    }
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.SOURCE_REVIEW],
+    )
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+                ChatCompletionResult(
+                    tool_calls=[
+                        ChatToolCall(
+                            id="1",
+                            name="summarize_source_tree",
+                            arguments={"repo_name": "demo"},
+                        ),
+                        ChatToolCall(
+                            id="2",
+                            name="list_source_files",
+                            arguments={"repo_name": "demo"},
+                        ),
+                        ChatToolCall(
+                            id="3",
+                            name="read_source_file",
+                            arguments={
+                                "repo_name": "demo",
+                                "relative_path": "src/app.py",
+                            },
+                        ),
+                    ],
+                    raw={},
+                ),
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert not result.errors
+    assert result.findings[0].category == FindingCategory.BUG_RISK
+    assert {
+        call.tool_name for call in result.metadata.tool_calls
+    } >= {"summarize_source_tree", "list_source_files", "read_source_file"}
+
+
+def test_agent_rejects_source_review_finding_without_evidence(
+    tmp_path: Path,
+) -> None:
+    payload = {
+        "repo_name": "demo",
+        "summary": "bad source finding",
+        "findings": [
+            {
+                "repo_name": "demo",
+                "severity": Severity.MEDIUM.value,
+                "category": FindingCategory.REFACTOR.value,
+                "title": "Refactor helper",
+                "description": "This lacks concrete evidence.",
+                "suggested_action": "Refactor it.",
+            }
+        ],
+    }
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for(tmp_path),
+        llm_client=FakeClient(
+            [ChatCompletionResult(content=json.dumps(payload), raw={})]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(RepoConfig(name="demo", path=tmp_path, enabled=True))
+
+    assert result.errors
+    assert "lacks evidence paths" in result.errors[0].message
+
+
 def test_agent_marks_incomplete_when_model_never_calls_required_tools(
     tmp_path: Path,
 ) -> None:
@@ -500,6 +601,39 @@ report:
     assert len(result.command_results) == 1
     assert result.command_results[0].label == "tests"
     assert result.command_results[0].exit_code == 0
+
+
+def test_no_llm_source_review_is_marked_skipped(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    config = tmp_path / "repos.yaml"
+    config.write_text(
+        f"""
+repos:
+  - name: demo
+    path: {repo}
+    enabled: true
+    checks:
+      - source-review
+report:
+  output_dir: {tmp_path / "reports"}
+""",
+        encoding="utf-8",
+    )
+
+    state = run_workflow(config_path=config, dry_run=True, use_llm=False)
+
+    assert any(
+        skipped.check_name == "source-review"
+        and "requires LLM mode" in skipped.reason
+        for skipped in state["skipped_checks"]
+    )
+    result = state["repo_results"][0]
+    assert {
+        tool.tool_name for tool in result.metadata.tool_calls
+    } >= {"summarize_source_tree", "list_source_files"}
 
 
 def test_no_llm_nonzero_command_becomes_finding(tmp_path: Path) -> None:

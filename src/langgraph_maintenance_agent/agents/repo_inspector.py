@@ -50,6 +50,39 @@ CHECK_EVIDENCE_TOOLS: dict[CheckName, set[str]] = {
     CheckName.LINT: {"run_configured_safe_command"},
     CheckName.BUILD: {"run_configured_safe_command"},
     CheckName.PYTHON_SYNTAX: {"run_configured_safe_command"},
+    CheckName.SOURCE_REVIEW: {
+        "summarize_source_tree",
+        "list_source_files",
+        "read_source_file",
+    },
+    CheckName.BUG_RISK_REVIEW: {
+        "summarize_source_tree",
+        "list_source_files",
+        "read_source_file",
+    },
+    CheckName.REFACTOR_REVIEW: {
+        "summarize_source_tree",
+        "list_source_files",
+        "read_source_file",
+    },
+    CheckName.TEST_GAP_REVIEW: {
+        "summarize_source_tree",
+        "list_source_files",
+        "read_source_file",
+    },
+}
+
+SOURCE_REVIEW_CHECKS = {
+    CheckName.SOURCE_REVIEW,
+    CheckName.BUG_RISK_REVIEW,
+    CheckName.REFACTOR_REVIEW,
+    CheckName.TEST_GAP_REVIEW,
+}
+SOURCE_REVIEW_CATEGORIES = {
+    FindingCategory.BUG_RISK,
+    FindingCategory.REFACTOR,
+    FindingCategory.CODE_QUALITY,
+    FindingCategory.TEST_GAP,
 }
 
 
@@ -139,6 +172,13 @@ class RepoInspectorAgent:
             call("search_static_markers", {"repo_name": repo.name}),
             call("detect_dependency_manifests", {"repo_name": repo.name}),
         ]
+        if repo_has_source_review(repo):
+            results.extend(
+                [
+                    call("summarize_source_tree", {"repo_name": repo.name}),
+                    call("list_source_files", {"repo_name": repo.name}),
+                ]
+            )
         findings: list[Finding] = []
         skipped = [
             SkippedCheck(
@@ -147,6 +187,17 @@ class RepoInspectorAgent:
                 reason="No-LLM mode used deterministic safe tool fallback.",
             )
         ]
+        if repo_has_source_review(repo):
+            skipped.append(
+                SkippedCheck(
+                    repo_name=repo.name,
+                    check_name="source-review",
+                    reason=(
+                        "Semantic source-code review requires LLM mode; no-LLM "
+                        "mode only collected bounded source metadata."
+                    ),
+                )
+            )
         for result in results:
             if not result.ok and result.error is not None:
                 findings.append(
@@ -460,6 +511,26 @@ class RepoInspectorAgent:
                             model_provider="openrouter",
                         ),
                     )
+                source_review_error = validate_source_review_findings(output.findings)
+                if source_review_error is not None:
+                    return incomplete_to_repo_result(
+                        IncompleteAgentRun(
+                            repo_name=repo.name,
+                            reason=source_review_error,
+                            stage="structured_output",
+                            tool_calls_made=tool_calls_made,
+                            iterations=iteration,
+                        ),
+                        metadata=RepoInspectionMetadata(
+                            tool_calls=[
+                                summarize_tool_call(record)
+                                for record in tool_call_records
+                            ],
+                            tool_calls_made=tool_calls_made,
+                            iterations=iteration,
+                            model_provider="openrouter",
+                        ),
+                    )
                 if missing_tools:
                     messages.append(
                         {
@@ -549,6 +620,12 @@ def required_evidence_tools(repo: RepoConfig) -> set[str]:
     return tools
 
 
+def repo_has_source_review(repo: RepoConfig) -> bool:
+    """Return whether a repo has semantic source review checks configured."""
+
+    return bool(set(repo.checks) & SOURCE_REVIEW_CHECKS)
+
+
 def missing_required_evidence_tools(
     repo: RepoConfig, completed_tools: set[str]
 ) -> set[str]:
@@ -635,4 +712,17 @@ def validate_repo_output_matches(
     for error in output.errors:
         if error.repo_name is not None and error.repo_name != repo.name:
             return f"agent error used unexpected repo_name: {error.repo_name}"
+    return None
+
+
+def validate_source_review_findings(findings: list[Finding]) -> str | None:
+    """Return a validation error if source-review findings lack evidence."""
+
+    for finding in findings:
+        if finding.category not in SOURCE_REVIEW_CATEGORIES:
+            continue
+        if not finding.evidence_paths:
+            return f"source-review finding lacks evidence paths: {finding.title}"
+        if not finding.suggested_action:
+            return f"source-review finding lacks suggested action: {finding.title}"
     return None

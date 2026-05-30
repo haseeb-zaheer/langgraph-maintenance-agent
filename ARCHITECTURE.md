@@ -31,7 +31,8 @@ systemd timer / manual CLI
 The current implementation includes the tool-using agent workflow, parallel
 LangGraph repo fan-out/fan-in, bounded configured command execution, polished
 reporting, redaction metadata, fresh failure reports, local runtime scripts,
-user-level systemd units, and optional Discord delivery:
+user-level systemd units, bounded LLM-backed source-code review, and optional
+Discord delivery:
 
 - `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
   schemas.
@@ -48,9 +49,15 @@ user-level systemd units, and optional Discord delivery:
   `cwd`, redirect supported temp/cache paths outside the repo, enforce
   `timeout_seconds` or a 300-second default, and return bounded redacted
   stdout/stderr excerpts.
+- `tools/source.py` exposes bounded source-code review tools for Python and
+  JavaScript/TypeScript repositories. The source tools summarize source roots,
+  list review candidates, and read individual approved source files while
+  enforcing sensitive/generated path blocking, per-file limits, per-run budgets,
+  symlink rejection, binary rejection, and redaction.
 - `reporting/markdown.py` renders structured reports with executive summary,
-  severity sections, repo scan/skipped summaries, dependency and command
-  results, dirty worktree notes, next actions, and per-repo appendix.
+  severity sections, repo scan/skipped summaries, source-review sections,
+  dependency and command results, dirty worktree notes, next actions, and
+  per-repo appendix.
 - `reporting/redaction.py` redacts common secrets and returns aggregate
   metadata so reports can warn that redaction occurred without exposing values.
 - `reporting/discord.py` sends redacted report content or compact summaries to
@@ -91,12 +98,19 @@ isolation for commands that need writable caches, and public release prep.
 
 Repo inspector agents do not receive raw shell access. They call a registry of
 constrained tools such as `git_status`, `list_files`, `read_safe_file`,
+`summarize_source_tree`, `list_source_files`, `read_source_file`,
 `search_static_markers`, `detect_dependency_manifests`, and
-`run_configured_safe_command`. Tools resolve repo names through validated config,
-block sensitive paths, bound outputs, and redact before content is stored or sent
-back to the model. File traversal skips symlinks and prunes blocked runtime or
-dependency directories. Each inspector run rejects model tool calls or final
-structured output that tries to switch to a different configured repository.
+`run_configured_safe_command`. Tools resolve repo names through validated
+config, block sensitive paths, bound outputs, and redact before content is
+stored or sent back to the model. File traversal skips symlinks and prunes
+blocked runtime, generated, or dependency directories. Each inspector run
+rejects model tool calls or final structured output that tries to switch to a
+different configured repository.
+
+Source-review checks require source tree summary, source file listing, and at
+least one source file read before final LLM findings are accepted. The no-LLM
+fallback collects bounded source metadata but records semantic source review as
+skipped because deterministic tooling does not reason about code behavior.
 
 `run_configured_safe_command` is a deterministic safety-boundary tool rather
 than raw shell access. The model can supply only `repo_name` and

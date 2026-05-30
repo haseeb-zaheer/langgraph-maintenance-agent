@@ -42,6 +42,7 @@ report:
     assert config.repos[0].name == "example"
     assert config.repos[0].checks == [CheckName.GIT_STATUS, CheckName.DOCS]
     assert config.report.output_dir == Path("reports")
+    assert config.repos[0].source_review_max_files == 20
 
 
 def test_missing_config_file_fails(tmp_path: Path) -> None:
@@ -86,6 +87,91 @@ repos:
     )
 
     with pytest.raises(ConfigError, match="made-up-check"):
+        load_config(config_path)
+
+
+def test_source_review_config_loads(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "repos.yaml",
+        """
+repos:
+  - name: example
+    path: /path/to/example
+    enabled: true
+    checks:
+      - source-review
+      - bug-risk-review
+      - refactor-review
+      - test-gap-review
+    source_roots:
+      - src
+      - tests
+    source_include_patterns:
+      - "*.py"
+    source_exclude_patterns:
+      - "src/generated/*"
+    source_review_max_files: 5
+    source_review_max_bytes_per_file: 2000
+    source_review_max_total_bytes: 10000
+    source_review_max_snippets: 3
+""",
+    )
+
+    config = load_config(config_path)
+    repo = config.repos[0]
+
+    assert repo.checks == [
+        CheckName.SOURCE_REVIEW,
+        CheckName.BUG_RISK_REVIEW,
+        CheckName.REFACTOR_REVIEW,
+        CheckName.TEST_GAP_REVIEW,
+    ]
+    assert repo.source_roots == ["src", "tests"]
+    assert repo.source_review_max_files == 5
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_roots", "[/absolute]"),
+        ("source_roots", "[../outside]"),
+        ("source_include_patterns", '["../*.py"]'),
+        ("source_exclude_patterns", '["/tmp/*"]'),
+    ],
+)
+def test_source_review_paths_must_be_relative(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    config_path = write_config(
+        tmp_path / "repos.yaml",
+        f"""
+repos:
+  - name: example
+    path: /path/to/example
+    enabled: true
+    {field}: {value}
+""",
+    )
+
+    with pytest.raises(ConfigError, match="source path values"):
+        load_config(config_path)
+
+
+def test_source_review_budget_must_be_positive(tmp_path: Path) -> None:
+    config_path = write_config(
+        tmp_path / "repos.yaml",
+        """
+repos:
+  - name: example
+    path: /path/to/example
+    enabled: true
+    source_review_max_files: 0
+""",
+    )
+
+    with pytest.raises(ConfigError, match="source review budgets"):
         load_config(config_path)
 
 

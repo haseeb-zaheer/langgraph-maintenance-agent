@@ -3,12 +3,13 @@
 Public-safe portfolio implementation of a scheduled, report-only repository
 maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
-Phases 10 and 11 are complete. The project includes a repo-scoped safe tool
+Phases 10, 11, and 13 are complete. The project includes a repo-scoped safe tool
 registry, OpenRouter chat-completions client, structured repo inspector and
 summary contracts, bounded configured command execution, polished redacted
 Markdown reports, fresh failure reports, parallel LangGraph fan-out/fan-in, and
-optional Discord webhook delivery through local scripts and user-level systemd
-units.
+bounded source-code review tools for LLM-backed bug/refactor/test-gap
+suggestions. Optional Discord webhook delivery runs through local scripts and
+user-level systemd units.
 
 ## Safety Model
 
@@ -21,6 +22,9 @@ units.
   unrestricted shell or filesystem access.
 - Safe file tools skip symlinks, prune sensitive directories, and bound file
   reads before data can reach the model or report.
+- Source review tools read only bounded Python and JavaScript/TypeScript source
+  files from approved source roots. Generated artifacts such as `.next/`,
+  source maps, dependency folders, build output, and caches are excluded.
 - Safe commands are opt-in per repo, parsed with `shlex.split`, and executed
   with `shell=False` from the configured repo root. They must also match a
   narrow report-only diagnostic profile.
@@ -59,6 +63,8 @@ uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider o
 LLM mode requires evidence tool calls before final structured findings are
 accepted. If the model returns a final answer before required tools run, the
 workflow requests tool use instead of trusting unevidenced output.
+Semantic source-code review requires LLM mode; `--no-llm` reports source review
+as skipped instead of inventing findings.
 
 `--dry-run` performs checks and renders report content in memory, but it does
 not write report files or send Discord messages.
@@ -128,8 +134,35 @@ actual command tool calls.
 Repo inspector agents can call only registered tools that accept `repo_name`.
 They cannot pass arbitrary filesystem roots or shell commands, and model tool
 calls for a different repo are rejected. Available tools include `git_status`,
-`latest_commit`, `list_files`, `read_safe_file`, `search_static_markers`,
+`latest_commit`, `list_files`, `read_safe_file`, `summarize_source_tree`,
+`list_source_files`, `read_source_file`, `search_static_markers`,
 `detect_dependency_manifests`, and `run_configured_safe_command`.
+
+## Source Review
+
+Enable LLM-backed source review with one or more source checks:
+
+```yaml
+repos:
+  - name: example-python-service
+    path: /path/to/example-python-service
+    enabled: true
+    checks:
+      - source-review
+      - bug-risk-review
+      - refactor-review
+      - test-gap-review
+    source_roots:
+      - src
+      - tests
+    source_review_max_files: 20
+    source_review_max_bytes_per_file: 12000
+    source_review_max_total_bytes: 80000
+```
+
+The first source-review scope is Python plus Next.js/JavaScript/TypeScript.
+Reports cite concise evidence paths and suggested human actions. The agent
+still never edits target repositories.
 
 ## Scheduled Runtime
 

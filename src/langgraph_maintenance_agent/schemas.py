@@ -31,6 +31,10 @@ class FindingCategory(StrEnum):
     STATIC = "static"
     RUNTIME = "runtime"
     CONFIGURATION = "configuration"
+    BUG_RISK = "bug-risk"
+    REFACTOR = "refactor"
+    CODE_QUALITY = "code-quality"
+    TEST_GAP = "test-gap"
 
 
 class Finding(BaseModel):

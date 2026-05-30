@@ -123,6 +123,48 @@ def test_findings_group_by_severity(tmp_path: Path) -> None:
     assert "## Medium Priority\n\n### `demo` Medium item" in report
 
 
+def test_source_review_findings_render_in_dedicated_sections(tmp_path: Path) -> None:
+    findings = [
+        Finding(
+            repo_name="demo",
+            severity=Severity.MEDIUM,
+            category=FindingCategory.BUG_RISK,
+            title="Possible missing validation",
+            description="Input is used without validation.",
+            evidence_paths=["src/app.py"],
+            suggested_action="Validate the input before use.",
+        ),
+        Finding(
+            repo_name="demo",
+            severity=Severity.LOW,
+            category=FindingCategory.REFACTOR,
+            title="Extract repeated helper",
+            description="Two branches repeat the same transformation.",
+            evidence_paths=["src/app.py"],
+            suggested_action="Extract the shared transformation.",
+        ),
+    ]
+    state: AgentState = {
+        "selected_repos": [RepoConfig(name="demo", path=tmp_path, enabled=True)],
+        "repo_results": [
+            RepoResult(repo_name="demo", path=str(tmp_path), findings=findings)
+        ],
+        "findings": findings,
+        "skipped_checks": [],
+        "errors": [],
+        "summary": "Summary",
+        "next_actions": [],
+        "run_id": "test",
+        "started_at": "2026-05-30T00:00:00+00:00",
+        "dry_run": True,
+    }
+
+    report = render_markdown_node(state)["report_markdown"] or ""
+
+    assert "## Bug Risk Review\n\n### `demo` Possible missing validation" in report
+    assert "## Refactor Opportunities\n\n### `demo` Extract repeated helper" in report
+
+
 def test_command_result_rendering_is_redacted(tmp_path: Path) -> None:
     secret = "Authorization: " + "Bearer secret-token"
     command = CommandResult(

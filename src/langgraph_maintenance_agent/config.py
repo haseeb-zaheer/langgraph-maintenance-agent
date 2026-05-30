@@ -33,6 +33,10 @@ class CheckName(StrEnum):
     LINT = "lint"
     BUILD = "build"
     PYTHON_SYNTAX = "python-syntax"
+    SOURCE_REVIEW = "source-review"
+    BUG_RISK_REVIEW = "bug-risk-review"
+    REFACTOR_REVIEW = "refactor-review"
+    TEST_GAP_REVIEW = "test-gap-review"
 
 
 COMMAND_CHECK_LABELS: dict[CheckName, str] = {
@@ -164,6 +168,13 @@ class RepoConfig(BaseModel):
     timeout_seconds: int | None = None
     notes: str | None = None
     required: bool = False
+    source_roots: list[str] = Field(default_factory=list)
+    source_include_patterns: list[str] = Field(default_factory=list)
+    source_exclude_patterns: list[str] = Field(default_factory=list)
+    source_review_max_files: int = 20
+    source_review_max_bytes_per_file: int = 12_000
+    source_review_max_total_bytes: int = 80_000
+    source_review_max_snippets: int = 8
 
     @field_validator("name")
     @classmethod
@@ -179,6 +190,38 @@ class RepoConfig(BaseModel):
         if value is not None and value <= 0:
             raise ValueError("timeout_seconds must be positive")
         return value
+
+    @field_validator(
+        "source_review_max_files",
+        "source_review_max_bytes_per_file",
+        "source_review_max_total_bytes",
+        "source_review_max_snippets",
+    )
+    @classmethod
+    def validate_positive_source_budget(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("source review budgets must be positive")
+        return value
+
+    @field_validator(
+        "source_roots",
+        "source_include_patterns",
+        "source_exclude_patterns",
+    )
+    @classmethod
+    def validate_source_path_values(cls, value: list[str]) -> list[str]:
+        validated: list[str] = []
+        for item in value:
+            normalized = item.strip()
+            if not normalized:
+                raise ValueError("source path values must not be empty")
+            path = Path(normalized)
+            if path.is_absolute():
+                raise ValueError("source path values must be relative")
+            if any(part in {"", ".."} for part in path.parts):
+                raise ValueError("source path values must not use traversal")
+            validated.append(path.as_posix())
+        return validated
 
     @field_validator("safe_commands")
     @classmethod

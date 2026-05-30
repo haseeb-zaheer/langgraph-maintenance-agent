@@ -16,6 +16,11 @@ from langgraph_maintenance_agent.tools.registry import (
     repo_name_parameter,
 )
 from langgraph_maintenance_agent.tools.search import search_static_markers
+from langgraph_maintenance_agent.tools.source import (
+    list_source_files,
+    read_source_file,
+    summarize_source_tree,
+)
 
 
 def build_tool_registry(context: ToolContext) -> ToolRegistry:
@@ -80,6 +85,42 @@ def build_tool_registry(context: ToolContext) -> ToolRegistry:
                 ),
                 parameters=params({}, ["repo_name"]),
                 func=partial(search_static_markers, context),
+            ),
+            RegisteredTool(
+                name="summarize_source_tree",
+                description=(
+                    "Return bounded source tree metadata for source-code review."
+                ),
+                parameters=params({}, ["repo_name"]),
+                func=partial(summarize_source_tree, context),
+            ),
+            RegisteredTool(
+                name="list_source_files",
+                description=(
+                    "List bounded source files approved for semantic source review."
+                ),
+                parameters=params(
+                    {
+                        "patterns": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "default": None,
+                        }
+                    },
+                    ["repo_name"],
+                ),
+                func=partial(list_source_files, context),
+            ),
+            RegisteredTool(
+                name="read_source_file",
+                description=(
+                    "Read one bounded approved source-code file for review."
+                ),
+                parameters=params(
+                    {"relative_path": {"type": "string"}},
+                    ["repo_name", "relative_path"],
+                ),
+                func=partial(read_source_file, context),
             ),
             RegisteredTool(
                 name="detect_dependency_manifests",

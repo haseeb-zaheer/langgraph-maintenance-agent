@@ -18,6 +18,22 @@ def make_registry(repo_root: Path, *, limits: ToolLimits | None = None):
     return build_tool_registry(context)
 
 
+def make_source_registry(repo_root: Path, **repo_overrides: object):
+    config = AppConfig(
+        repos=[
+            RepoConfig(
+                name="demo",
+                path=repo_root,
+                enabled=True,
+                checks=[CheckName.SOURCE_REVIEW],
+                **repo_overrides,
+            )
+        ]
+    )
+    context = ToolContext.from_config(config)
+    return build_tool_registry(context)
+
+
 def make_command_registry(
     repo_root: Path,
     *,
@@ -137,6 +153,23 @@ def test_static_marker_search_is_bounded_and_public_safe(tmp_path: Path) -> None
     assert all(match["path"] != ".env" for match in result.data["matches"])
 
 
+def test_static_marker_search_ignores_generated_next_artifacts(tmp_path: Path) -> None:
+    generated = tmp_path / ".next" / "dev" / "server"
+    generated.mkdir(parents=True)
+    generated.joinpath("bundle.js.map").write_text("TODO generated\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.tsx").write_text(
+        "export const value = 1;\n",
+        encoding="utf-8",
+    )
+    registry = make_registry(tmp_path)
+
+    result = registry.call("search_static_markers", {"repo_name": "demo"})
+
+    assert result.ok
+    assert result.data["matches"] == []
+
+
 def test_file_tools_skip_symlinks_that_escape_repo(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside.md"
     outside.write_text("# TODO: private\n", encoding="utf-8")
@@ -169,6 +202,122 @@ def test_list_files_prunes_sensitive_directories(tmp_path: Path) -> None:
     assert result.ok
     paths = [entry["path"] for entry in result.data["files"]]
     assert paths == ["src/README.md"]
+
+
+def test_source_tree_summary_detects_nextjs_and_candidates(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"dependencies":{"next":"1.0.0","react":"1.0.0"}}',
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "page.tsx").write_text(
+        "export default function Page() { return null; }\n",
+        encoding="utf-8",
+    )
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call("summarize_source_tree", {"repo_name": "demo"})
+
+    assert result.ok
+    assert "nextjs" in result.data["framework_signals"]
+    assert result.data["languages"]["typescript"] == 1
+    assert result.data["candidate_files"][0]["path"] == "src/page.tsx"
+
+
+def test_source_tree_summary_detects_python_tests(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='demo'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_app.py").write_text(
+        "def test_app():\n    assert True\n",
+        encoding="utf-8",
+    )
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call("summarize_source_tree", {"repo_name": "demo"})
+
+    assert result.ok
+    assert "python" in result.data["framework_signals"]
+    assert result.data["languages"]["python"] == 2
+    assert result.data["test_roots"] == ["tests"]
+
+
+def test_list_source_files_respects_budget_and_excludes_generated(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / ".next").mkdir()
+    (tmp_path / ".next" / "generated.ts").write_text(
+        "export const x = 1;\n",
+        encoding="utf-8",
+    )
+    registry = make_source_registry(tmp_path, source_review_max_files=1)
+
+    result = registry.call("list_source_files", {"repo_name": "demo"})
+
+    assert result.ok
+    assert [entry["path"] for entry in result.data["files"]] == ["src/app.py"]
+
+
+def test_read_source_file_reads_approved_source_and_redacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text(
+        "API_KEY = 'secret'\nprint('ok')\n",
+        encoding="utf-8",
+    )
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call(
+        "read_source_file",
+        {"repo_name": "demo", "relative_path": "src/app.py"},
+    )
+
+    assert result.ok
+    assert "secret" not in result.data["content"]
+    assert "[redacted sensitive line]" in result.data["content"]
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        ".env",
+        "src/secret.log",
+        ".next/dev/page.tsx",
+        "node_modules/pkg/index.ts",
+        "src/bundle.js.map",
+        "../outside.py",
+        "src/image.png",
+    ],
+)
+def test_read_source_file_rejects_unsafe_paths(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    (tmp_path / "src").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "secret.log").write_text("secret", encoding="utf-8")
+    (tmp_path / ".next" / "dev").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".next" / "dev" / "page.tsx").write_text("x", encoding="utf-8")
+    (tmp_path / "node_modules" / "pkg").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "node_modules" / "pkg" / "index.ts").write_text("x", encoding="utf-8")
+    (tmp_path / "src" / "bundle.js.map").write_text("x", encoding="utf-8")
+    (tmp_path / "src" / "image.png").write_bytes(b"\x89PNG")
+    (tmp_path / ".env").write_text("TOKEN=secret", encoding="utf-8")
+    registry = make_source_registry(tmp_path)
+
+    result = registry.call(
+        "read_source_file",
+        {"repo_name": "demo", "relative_path": relative_path},
+    )
+
+    assert not result.ok
+    assert result.error is not None
 
 
 def test_list_files_respects_max_file_limit(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from langgraph_maintenance_agent.schemas import (
     AgentError,
     CommandResult,
     Finding,
+    FindingCategory,
     RepoResult,
     Severity,
     SkippedCheck,
@@ -25,6 +26,10 @@ REPORT_HEADINGS = [
     "Repositories Scanned",
     "Repositories Skipped",
     "Dependency Concerns",
+    "Bug Risk Review",
+    "Refactor Opportunities",
+    "Code Quality Notes",
+    "Test Gap Notes",
     "Test/Lint/Build Results",
     "Command Results",
     "Dirty Worktrees",
@@ -96,6 +101,18 @@ def render_report(
         _render_skipped_repos(selected_repos, repo_results, skipped_checks)
     )
     sections["Dependency Concerns"].extend(_render_dependency_concerns(findings))
+    sections["Bug Risk Review"].extend(
+        _render_category_findings(findings, FindingCategory.BUG_RISK)
+    )
+    sections["Refactor Opportunities"].extend(
+        _render_category_findings(findings, FindingCategory.REFACTOR)
+    )
+    sections["Code Quality Notes"].extend(
+        _render_category_findings(findings, FindingCategory.CODE_QUALITY)
+    )
+    sections["Test Gap Notes"].extend(
+        _render_category_findings(findings, FindingCategory.TEST_GAP)
+    )
     command_results = _render_command_results(repo_results)
     sections["Test/Lint/Build Results"].extend(command_results)
     sections["Command Results"].extend(command_results)
@@ -252,8 +269,15 @@ def _render_skipped_repos(
 
 
 def _render_dependency_concerns(findings: list[Finding]) -> list[str]:
+    return _render_category_findings(findings, FindingCategory.DEPENDENCY)
+
+
+def _render_category_findings(
+    findings: list[Finding],
+    category: FindingCategory,
+) -> list[str]:
     return _render_findings(
-        [finding for finding in findings if finding.category.value == "dependency"]
+        [finding for finding in findings if finding.category == category]
     )
 
 

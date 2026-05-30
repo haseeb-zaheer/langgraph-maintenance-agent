@@ -24,6 +24,23 @@ documentation must stay public-safe.
 - Run only explicitly configured safe commands for the current repo when the
   matching check is enabled.
 
+## Source Code Review
+
+Source review is report-only. The agent may read bounded source-code files only
+through `summarize_source_tree`, `list_source_files`, and `read_source_file`.
+Those tools accept repo names and relative paths only, enforce configured repo
+roots, reject traversal and symlinks, and redact sensitive-looking lines before
+content reaches model messages, state, reports, or Discord.
+
+Built-in exclusions block generated artifacts and dependencies, including
+`.next/`, source maps, `node_modules/`, `dist/`, `build/`, coverage output,
+caches, vendored directories, minified bundles, logs, databases, raw reports,
+and private key material. These exclusions are mandatory in the current phase.
+
+Semantic bug/refactor/test-gap review requires LLM mode. In no-LLM mode, source
+review is marked skipped/incomplete rather than pretending deterministic tools
+understood code behavior.
+
 ## Configured Commands
 
 Configured commands are report-only diagnostics. The model can request

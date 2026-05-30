@@ -43,6 +43,21 @@ SENSITIVE_PARTS = {
     "build",
     "reports",
 }
+GENERATED_PARTS = {
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".turbo",
+    ".parcel-cache",
+    ".vite",
+    "coverage",
+    "htmlcov",
+    "target",
+    "out",
+    "generated",
+    "vendor",
+}
+GENERATED_SUFFIXES = {".map", ".min.js", ".min.css"}
 SAFE_READ_NAMES = {
     "README",
     "README.md",
@@ -67,7 +82,17 @@ SAFE_READ_NAMES = {
     "packages.yml",
 }
 SAFE_READ_SUFFIXES = {".md", ".rst", ".txt", ".toml", ".yaml", ".yml", ".json"}
-TEXTUAL_SUFFIXES = SAFE_READ_SUFFIXES | {".py", ".js", ".ts", ".tsx", ".jsx", ".css"}
+TEXTUAL_SUFFIXES = SAFE_READ_SUFFIXES | {
+    ".py",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".css",
+    ".scss",
+}
 BINARY_EXTENSIONS = {
     ".png",
     ".jpg",
@@ -122,11 +147,34 @@ def is_sensitive_relative_path(path: Path) -> bool:
     )
 
 
+def is_generated_relative_path(path: Path) -> bool:
+    """Return whether a relative path is generated or dependency output."""
+
+    lower_parts = {part.lower() for part in path.parts}
+    lower_name = path.name.lower()
+    return (
+        bool(lower_parts & GENERATED_PARTS)
+        or any(lower_name.endswith(suffix) for suffix in GENERATED_SUFFIXES)
+        or lower_name.endswith(".bundle.js")
+        or lower_name.endswith(".chunk.js")
+    )
+
+
+def is_blocked_relative_path(path: Path) -> bool:
+    """Return whether a relative path should be excluded from all safe tools."""
+
+    return is_sensitive_relative_path(path) or is_generated_relative_path(path)
+
+
 def is_sensitive_path_part(name: str) -> bool:
     """Return whether a single path component is blocked from traversal."""
 
     lower_name = name.lower()
-    return lower_name in SENSITIVE_NAMES or lower_name in SENSITIVE_PARTS
+    return (
+        lower_name in SENSITIVE_NAMES
+        or lower_name in SENSITIVE_PARTS
+        or lower_name in GENERATED_PARTS
+    )
 
 
 def is_binary_path(path: Path) -> bool:

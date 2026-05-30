@@ -12,6 +12,12 @@ Current tools:
 - `list_files(repo_name, patterns=None)`: bounded public-safe relative paths.
 - `read_safe_file(repo_name, relative_path)`: approved small text docs and
   manifests only.
+- `summarize_source_tree(repo_name)`: bounded source roots, language counts,
+  framework signals, test roots, and review candidates.
+- `list_source_files(repo_name, patterns=None)`: bounded Python and
+  JavaScript/TypeScript source files approved for semantic review.
+- `read_source_file(repo_name, relative_path)`: one approved source file,
+  bounded by repo source-review budgets and redacted before model/state use.
 - `search_static_markers(repo_name)`: bounded TODO/FIXME/HACK summaries.
 - `detect_dependency_manifests(repo_name)`: Python, Node, Docker, and dbt
   manifests without running package managers.
@@ -20,14 +26,20 @@ Current tools:
   `safe_commands`.
 
 Blocked paths include `.env`, logs, databases, private keys, generated reports,
-caches, symlinks, path traversal, files outside the repo, oversized files, and
-likely binary files. Traversal prunes blocked directories before descending.
-Tool outputs are JSON-serializable and bounded before they can be returned to an
-LLM.
+caches, generated artifacts, dependency folders, symlinks, path traversal, files
+outside the repo, oversized files, and likely binary files. Generated artifacts
+include `.next/`, source maps, coverage output, `dist/`, `build/`, caches,
+vendored directories, and minified bundles. Traversal prunes blocked
+directories before descending. Tool outputs are JSON-serializable and bounded
+before they can be returned to an LLM.
 
 In LLM mode, configured checks define required evidence tools. The repo
 inspector asks OpenRouter for required tool use until those tools complete, and
 does not accept final structured findings before evidence exists.
+For source-review checks, required evidence includes source tree summary,
+source file listing, and at least one bounded source file read. Source-review
+findings must cite evidence paths and suggested human actions. No-LLM mode
+records semantic source review as skipped instead of fabricating findings.
 
 In the parallel workflow, each repo branch receives a separate registry built
 from a one-repo config. OpenRouter tool schemas therefore enumerate only the

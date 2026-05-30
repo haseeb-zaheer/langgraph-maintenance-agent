@@ -14,8 +14,8 @@ from langgraph_maintenance_agent.tools.safety import (
     assert_safe_read_path,
     contains_nul_bytes,
     is_binary_path,
+    is_blocked_relative_path,
     is_sensitive_path_part,
-    is_sensitive_relative_path,
     read_text_excerpt,
     redact_sensitive_lines,
     resolve_inside_repo,
@@ -35,14 +35,14 @@ def _walk_public_file_paths(root: Path) -> Iterator[Path]:
         if path.is_symlink() or is_sensitive_path_part(path.name):
             continue
         rel = path.relative_to(root)
-        if is_sensitive_relative_path(rel):
+        if is_blocked_relative_path(rel):
             continue
         if path.is_dir():
             yield from _walk_public_file_paths(path)
             continue
         if not path.is_file():
             continue
-        if is_sensitive_relative_path(rel) or is_binary_path(rel):
+        if is_blocked_relative_path(rel) or is_binary_path(rel):
             continue
         try:
             resolve_inside_repo(root, path)

@@ -438,9 +438,9 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Implement `latest_commit(repo_name)`.
 - [x] Implement `list_files(repo_name, patterns=None)`.
 - [x] Implement `read_safe_file(repo_name, relative_path)`.
-- [ ] Implement `list_source_files(repo_name, patterns=None)`.
-- [ ] Implement `read_source_file(repo_name, relative_path)`.
-- [ ] Implement `summarize_source_tree(repo_name)`.
+- [x] Implement `list_source_files(repo_name, patterns=None)`.
+- [x] Implement `read_source_file(repo_name, relative_path)`.
+- [x] Implement `summarize_source_tree(repo_name)`.
 - [x] Implement `search_static_markers(repo_name)`.
 - [x] Implement `detect_dependency_manifests(repo_name)`.
 - [x] Implement `run_configured_safe_command(repo_name, command_label)`.
@@ -459,11 +459,11 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Mark commands as skipped if not configured.
 - [x] Avoid reading `.env`, raw logs, credential files, private key files, and
       other sensitive files.
-- [ ] Ensure source-code tools reject generated directories such as `.next/`,
+- [x] Ensure source-code tools reject generated directories such as `.next/`,
       `dist/`, `build/`, coverage output, dependency directories, caches, and
       vendored artifacts by default.
-- [ ] Ensure source-code tools use per-file and per-run token/byte budgets.
-- [ ] Ensure source-code findings cite specific bounded evidence paths/line
+- [x] Ensure source-code tools use per-file and per-run token/byte budgets.
+- [x] Ensure source-code findings cite specific bounded evidence paths/line
       ranges without dumping large private snippets.
 - [x] Add tests for sensitive path rejection.
 - [x] Add tests proving agents cannot call unregistered tools.
@@ -482,13 +482,13 @@ The safety boundary must be enforced in code, not only prompts:
 - [x] Detect dependency manifests and lockfiles.
 - [x] Detect test/lint/build command availability only through config.
 - [x] Search TODO/FIXME/HACK markers.
-- [ ] Read bounded source-code files for semantic inspection.
-- [ ] Detect generated/source-map artifacts and exclude them from static marker
+- [x] Read bounded source-code files for semantic inspection.
+- [x] Detect generated/source-map artifacts and exclude them from static marker
       and code review scans.
-- [ ] Detect likely bug risks from source evidence.
-- [ ] Detect refactor and maintainability opportunities from source evidence.
-- [ ] Detect duplicated or overly complex source hotspots when practical.
-- [ ] Detect missing or weak tests around risky source areas when practical.
+- [x] Detect likely bug risks from source evidence.
+- [x] Detect refactor and maintainability opportunities from source evidence.
+- [x] Detect duplicated or overly complex source hotspots when practical.
+- [x] Detect missing or weak tests around risky source areas when practical.
 - [ ] Search suspicious committed artifacts by filename pattern.
 - [x] Record skipped checks and reasons.
 
@@ -1423,79 +1423,79 @@ Scope:
 
 Deliverables:
 
-- [ ] Add source-review check names, for example:
+- [x] Add source-review check names, for example:
       - `source-review`
       - `bug-risk-review`
       - `refactor-review`
       - `test-gap-review`
-- [ ] Add generated-directory and generated-file exclusions shared by
+- [x] Add generated-directory and generated-file exclusions shared by
       `list_files`, `search_static_markers`, source tools, and reports.
-- [ ] Implement `list_source_files(repo_name, patterns=None)` with language and
+- [x] Implement `list_source_files(repo_name, patterns=None)` with language and
       framework-aware allowlists for common project types.
-- [ ] Implement `read_source_file(repo_name, relative_path)` with strict
+- [x] Implement `read_source_file(repo_name, relative_path)` with strict
       sensitive-path rejection, generated-file rejection, binary detection,
       per-file byte limits, and redaction before model/state/report use.
-- [ ] Implement `summarize_source_tree(repo_name)` to identify source roots,
+- [x] Implement `summarize_source_tree(repo_name)` to identify source roots,
       major languages, framework signals, test roots, config files, and review
       candidates without reading the full repository into context.
-- [ ] Add an LLM source-review prompt that asks for:
+- [x] Add an LLM source-review prompt that asks for:
       - likely bugs or behavioral risks
       - refactor opportunities
       - complexity or duplication hotspots
       - missing validation/error-handling risks
       - missing or weak tests around changed/risky areas
       - public-safe evidence references
-- [ ] Add structured finding categories or subcategories for code quality,
+- [x] Add structured finding categories or subcategories for code quality,
       bug risk, refactor, complexity, and test gap findings.
-- [ ] Require source-review findings to include concrete evidence paths and a
+- [x] Require source-review findings to include concrete evidence paths and a
       suggested human action.
-- [ ] Add report sections for:
+- [x] Add report sections for:
       - `Bug Risk Review`
       - `Refactor Opportunities`
       - `Code Quality Notes`
       - `Test Gap Notes`
-- [ ] Add no-LLM deterministic fallback that still reports source-review
+- [x] Add no-LLM deterministic fallback that still reports source-review
       limitations clearly instead of pretending semantic review happened.
-- [ ] Add per-repo budgets for source review, such as max source files, max
+- [x] Add per-repo budgets for source review, such as max source files, max
       bytes per file, max total bytes, and max snippets.
-- [ ] Add config options to include or exclude source roots and file patterns
+- [x] Add config options to include or exclude source roots and file patterns
       per repo without allowing arbitrary sensitive paths.
-- [ ] Ensure all source-review tool output is redacted and bounded before it is
+- [x] Ensure all source-review tool output is redacted and bounded before it is
       stored, summarized, reported, or sent to Discord.
-- [ ] Ensure Discord summaries never include large source snippets.
+- [x] Ensure Discord summaries never include large source snippets.
 
 Tests:
 
-- [ ] Source tools reject `.env`, logs, private keys, databases, raw reports,
+- [x] Source tools reject `.env`, logs, private keys, databases, raw reports,
       generated directories, dependency folders, source maps, minified bundles,
       binary files, and paths outside the repo.
-- [ ] Source tools can read small synthetic source files under approved source
+- [x] Source tools can read small synthetic source files under approved source
       roots.
-- [ ] Static marker search ignores generated `.next/` artifacts in a synthetic
+- [x] Static marker search ignores generated `.next/` artifacts in a synthetic
       Next.js repo.
-- [ ] Source tree summary identifies source roots and test roots for synthetic
+- [x] Source tree summary identifies source roots and test roots for synthetic
       Python and Node/Next.js repos.
-- [ ] LLM source-review prompt never requests arbitrary shell or filesystem
+- [x] LLM source-review prompt never requests arbitrary shell or filesystem
       access.
-- [ ] Mocked LLM source review produces structured bug/refactor/test-gap
+- [x] Mocked LLM source review produces structured bug/refactor/test-gap
       findings without real credentials.
-- [ ] No-LLM source-review mode records a skipped/incomplete semantic review
+- [x] No-LLM source-review mode records a skipped/incomplete semantic review
       rather than false confidence.
-- [ ] Reports render code-review sections with concise evidence and no
+- [x] Reports render code-review sections with concise evidence and no
       unredacted secrets.
 
 Validation:
 
-- [ ] Run against a synthetic Python repo with intentional simple bug/refactor
+- [x] Run against a synthetic Python repo with intentional simple bug/refactor
       examples.
-- [ ] Run against a synthetic Next.js repo with `.next/` generated artifacts and
+- [x] Run against a synthetic Next.js repo with `.next/` generated artifacts and
       verify generated files are ignored.
 - [ ] Run against one local configured repo after confirming no report content
       will be committed.
 
 Exit criteria:
 
-- [ ] A configured repo scan can produce useful report-only source-code
+- [x] A configured repo scan can produce useful report-only source-code
       improvement suggestions based on bounded code reads.
 
 ## Open Questions

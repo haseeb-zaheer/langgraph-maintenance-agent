@@ -33,6 +33,23 @@ None found.
 
 None found.
 
+## Bug Risk Review
+
+- `example-python-service`: synthetic input validation risk in `src/example.py`.
+
+## Refactor Opportunities
+
+- `example-python-service`: synthetic repeated parsing logic in `src/parser.py`.
+
+## Code Quality Notes
+
+None found.
+
+## Test Gap Notes
+
+- `example-python-service`: synthetic edge case lacks focused coverage in
+  `tests/test_parser.py`.
+
 ## Test/Lint/Build Results
 
 None found.
