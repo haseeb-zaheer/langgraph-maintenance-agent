@@ -15,7 +15,7 @@ This repository is intended to be public.
 
 Never commit secrets, private `.env` values, access tokens, webhook URLs, API
 keys, private repository paths that are not already public-safe, raw logs,
-private runtime data, customer data, internal URLs, or proprietary source
+non-public runtime data, user data, non-public service URLs, or closed-source
 snippets from scanned repositories.
 
 Use placeholders in documentation and examples:
@@ -62,8 +62,8 @@ configuration, scheduling, or report behavior changes:
 
 - `PRD.md`
 - `AGENTS.md`
-- future `ARCHITECTURE.md`, once created
-- future `README.md`, once created
+- `ARCHITECTURE.md`
+- `README.md`
 
 ## Intended Structure
 
