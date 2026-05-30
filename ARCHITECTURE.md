@@ -26,16 +26,23 @@ systemd timer / manual CLI
       -> send Discord summary
 ```
 
-## Batch 2 Implementation
+## Batch 3 Implementation
 
-Batch 2 implements the first tool-using agent workflow:
+Batch 3 implements the first tool-using agent workflow plus bounded configured
+command execution:
 
 - `tools/` exposes repo-scoped read-only tools and OpenRouter-compatible tool
   schemas.
 - `llm/openrouter.py` provides a direct non-streaming Chat Completions client
   with tool-call parsing and JSON-schema response format support.
 - `agents/repo_inspector.py` runs an OpenRouter-backed tool loop or a
-  deterministic no-LLM fallback.
+  deterministic no-LLM fallback. In no-LLM mode, configured command-style
+  checks map to `safe_commands` labels for `tests`, `lint`, `build`, and
+  `python-syntax`.
+- `tools/commands.py` executes only commands explicitly configured for the
+  current repo. Commands are parsed with `shlex.split`, run with `shell=False`,
+  use the configured repo path as `cwd`, enforce `timeout_seconds` or a
+  300-second default, and return bounded redacted stdout/stderr excerpts.
 - `graph.py` assembles the sequential supervisor workflow:
   `load_config -> prepare_run -> select_repos -> build_tool_registry ->
   inspect_repo_agent -> normalize_agent_output -> merge_results ->
@@ -43,9 +50,9 @@ Batch 2 implements the first tool-using agent workflow:
 
 ## Remaining Boundary
 
-Later batches still own production report polish, redaction metadata, configured
-safe command execution, Discord delivery, parallel fan-out, wrapper scripts, and
-the systemd timer.
+Later batches still own production report polish, redaction metadata, Discord
+delivery, parallel fan-out, wrapper scripts, optional temp/cache isolation for
+commands that need writable caches, and the systemd timer.
 
 ## Agent Safety Boundary
 
@@ -57,8 +64,14 @@ block sensitive paths, bound outputs, and redact before content is stored or sen
 back to the model. File traversal skips symlinks and prunes blocked runtime or
 dependency directories. Each inspector run rejects model tool calls or final
 structured output that tries to switch to a different configured repository.
-`run_configured_safe_command` currently returns a skipped result until Phase 7
-implements execution mechanics.
+
+`run_configured_safe_command` is a deterministic safety-boundary tool rather
+than raw shell access. The model can supply only `repo_name` and
+`command_label`; the actual command string comes from validated config for that
+repo. Unknown labels return a safe tool error. Timed-out commands return a
+successful tool envelope with a timed-out `CommandResult` and an incomplete
+reason. Nonzero exits are preserved as command results and normalized into
+findings by the inspector/reporting path.
 
 ## Source Of Truth
 

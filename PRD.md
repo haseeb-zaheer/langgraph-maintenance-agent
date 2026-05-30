@@ -876,8 +876,9 @@ Deliverables:
       - Node: `package.json`, lockfiles
       - Docker: `Dockerfile`, `compose.yaml`, `docker-compose.yml`
       - dbt: `dbt_project.yml`
-- [x] Implement `run_configured_safe_command(repo_name, command_label)` as a
-      stub that returns skipped until Phase 7 command execution is implemented.
+- [x] Initially implemented `run_configured_safe_command(repo_name,
+      command_label)` as a skipped stub; Phase 7 replaces it with bounded
+      configured command execution.
 - [x] Ensure every tool accepts a repo name and never arbitrary raw root paths.
 - [x] Ensure every tool output is bounded and redacted before state/model use.
 - [x] Convert tool outputs into structures reusable by agent prompts and
@@ -896,7 +897,7 @@ Tests:
 - [x] Static marker scan finds TODO/FIXME/HACK without reading ignored secrets.
 - [x] Tool outputs are bounded and redacted.
 - [x] Unknown repo names are rejected.
-- [x] Command tool returns skipped before Phase 7.
+- [x] Command tool returned skipped before Phase 7.
 
 Validation:
 
@@ -1038,46 +1039,47 @@ repo-scoped tool execution while preserving the report-only safety model.
 
 Deliverables:
 
-- [ ] Implement command runner wrapper.
-- [ ] Enforce per-command timeout.
-- [ ] Enforce per-repo working directory.
-- [ ] Capture exit code.
-- [ ] Capture bounded stdout/stderr excerpts.
-- [ ] Redact command output before storing it.
-- [ ] Mark timeout as incomplete/skipped check with evidence.
-- [ ] Support shell command strings only from validated `safe_commands`.
-- [ ] Prefer argv/non-shell execution for internal built-in commands.
-- [ ] Add built-in mapping from configured checks to command labels:
+- [x] Implement command runner wrapper.
+- [x] Enforce per-command timeout.
+- [x] Enforce per-repo working directory.
+- [x] Capture exit code.
+- [x] Capture bounded stdout/stderr excerpts.
+- [x] Redact command output before storing it.
+- [x] Mark timeout as incomplete/skipped check with evidence.
+- [x] Support command strings only from validated `safe_commands`, parsed with
+      `shlex.split` and executed with `shell=False`.
+- [x] Prefer argv/non-shell execution for internal built-in commands.
+- [x] Add built-in mapping from configured checks to command labels:
       - `tests`
       - `lint`
       - `build`
       - `python-syntax`
-- [ ] If a configured check has no safe command, mark it skipped with reason.
-- [ ] Ensure command execution never runs fix/format/upgrade/cleanup commands.
+- [x] If a configured check has no safe command, mark it skipped with reason.
+- [x] Ensure command execution never runs fix/format/upgrade/cleanup commands.
 - [ ] Add optional writable temp/cache environment support outside the target
       repository for tools that need caches.
 
 Tests:
 
-- [ ] Safe command exits `0`.
-- [ ] Safe command exits nonzero and becomes a finding.
-- [ ] Safe command timeout is reported.
-- [ ] Unsafe command is rejected during config validation.
-- [ ] Command stdout/stderr is bounded and redacted.
-- [ ] Missing safe command is skipped.
-- [ ] Working directory is the target repo.
+- [x] Safe command exits `0`.
+- [x] Safe command exits nonzero and becomes a finding.
+- [x] Safe command timeout is reported.
+- [x] Unsafe command is rejected during config validation.
+- [x] Command stdout/stderr is bounded and redacted.
+- [x] Missing safe command is skipped.
+- [x] Working directory is the target repo.
 - [ ] Command runner does not mutate synthetic repo except explicitly expected
       tool cache behavior in temp dirs.
 
 Validation:
 
-- [ ] Synthetic config can run a harmless command such as
+- [x] Synthetic config can run a harmless command such as
       `python -c "print('ok')"`.
-- [ ] Unsafe command fixtures fail before execution.
+- [x] Unsafe command fixtures fail before execution.
 
 Exit criteria:
 
-- [ ] Configured tests/lint/build checks are supported without weakening the
+- [x] Configured tests/lint/build checks are supported without weakening the
       safety boundary, and agents can call them only through the safe command
       tool.
 

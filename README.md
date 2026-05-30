@@ -3,12 +3,12 @@
 Public-safe portfolio implementation of a scheduled, report-only repository
 maintenance agent built with LangGraph and OpenRouter-backed tool-using agents.
 
-Batch 2 is complete. The project now includes a repo-scoped safe tool registry,
-OpenRouter chat-completions client, structured repo inspector contracts, and a
-sequential LangGraph workflow with a deterministic no-LLM demo mode. Reports
-receive minimum secret redaction before local writes. Later batches will polish
-report sections/redaction metadata, Discord delivery, safe command execution,
-parallel fan-out, and systemd scheduling.
+Batch 3 is complete. The project now includes a repo-scoped safe tool registry,
+OpenRouter chat-completions client, structured repo inspector contracts, bounded
+configured command execution, and a sequential LangGraph workflow with a
+deterministic no-LLM demo mode. Reports receive minimum secret redaction before
+local writes. Later batches will polish report sections/redaction metadata,
+Discord delivery, parallel fan-out, and systemd scheduling.
 
 ## Safety Model
 
@@ -21,6 +21,8 @@ parallel fan-out, and systemd scheduling.
   unrestricted shell or filesystem access.
 - Safe file tools skip symlinks, prune sensitive directories, and bound file
   reads before data can reach the model or report.
+- Safe commands are opt-in per repo, parsed with `shlex.split`, and executed
+  with `shell=False` from the configured repo root.
 - The agent is report-only and must not fix, format, upgrade, commit, reset,
   clean, or delete files in target repositories.
 
@@ -56,14 +58,42 @@ uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider o
 `--dry-run` performs checks and renders report content in memory, but it does
 not write report files or send Discord messages.
 
+## Safe Commands
+
+`safe_commands` are configured per repo and only run when a matching
+command-style check is enabled. The deterministic mapping is:
+
+- `tests` check -> `safe_commands.tests`
+- `lint` check -> `safe_commands.lint`
+- `build` check -> `safe_commands.build`
+- `python-syntax` check -> `safe_commands.python-syntax`
+
+Example:
+
+```yaml
+repos:
+  - name: example-python-service
+    path: /path/to/example-python-service
+    enabled: true
+    checks:
+      - tests
+    safe_commands:
+      tests: python -c "print('ok')"
+    timeout_seconds: 300
+```
+
+Commands are parsed into argv and run with `shell=False`, so shell features such
+as pipes, redirection, variable expansion, and compound commands are not
+supported in this batch. Stdout and stderr are bounded and redacted before they
+enter tool results, workflow state, or reports. Unknown labels do not execute.
+
 ## Agent Tools
 
 Repo inspector agents can call only registered tools that accept `repo_name`.
 They cannot pass arbitrary filesystem roots or shell commands, and model tool
 calls for a different repo are rejected. Available tools include `git_status`,
 `latest_commit`, `list_files`, `read_safe_file`, `search_static_markers`,
-`detect_dependency_manifests`, and a skipped `run_configured_safe_command` stub
-reserved for the command-execution batch.
+`detect_dependency_manifests`, and `run_configured_safe_command`.
 
 ## Source Of Truth
 
