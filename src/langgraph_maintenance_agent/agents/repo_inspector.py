@@ -39,6 +39,17 @@ COMMAND_LABEL_CATEGORIES: dict[str, FindingCategory] = {
     "python-syntax": FindingCategory.TEST,
 }
 
+CHECK_EVIDENCE_TOOLS: dict[CheckName, set[str]] = {
+    CheckName.GIT_STATUS: {"git_status", "latest_commit"},
+    CheckName.DOCS: {"list_files"},
+    CheckName.STATIC_SEARCH: {"search_static_markers"},
+    CheckName.DEPENDENCY_METADATA: {"detect_dependency_manifests"},
+    CheckName.TESTS: {"run_configured_safe_command"},
+    CheckName.LINT: {"run_configured_safe_command"},
+    CheckName.BUILD: {"run_configured_safe_command"},
+    CheckName.PYTHON_SYNTAX: {"run_configured_safe_command"},
+}
+
 
 def incomplete_to_repo_result(incomplete: IncompleteAgentRun) -> RepoResult:
     """Convert an incomplete agent run to a repo result with a recoverable error."""
@@ -224,13 +235,18 @@ class RepoInspectorAgent:
             },
         ]
         executed_command_results: list[CommandResult] = []
+        completed_evidence_tools: set[str] = set()
         tool_calls_made = 0
         for iteration in range(1, self.max_iterations + 1):
+            missing_tools = missing_required_evidence_tools(
+                repo, completed_evidence_tools
+            )
             try:
                 response = self.llm_client.chat(
                     messages=messages,
                     tools=self.tool_registry.schemas(),
                     response_schema=RepoInspectorOutput.model_json_schema(),
+                    tool_choice="required" if missing_tools else "auto",
                 )
             except Exception as exc:
                 return incomplete_to_repo_result(
@@ -306,6 +322,8 @@ class RepoInspectorAgent:
                                 result.data["command_result"]
                             )
                         )
+                    if result.ok:
+                        completed_evidence_tools.add(tool_call.name)
                     messages.append(
                         {
                             "role": "tool",
@@ -339,6 +357,24 @@ class RepoInspectorAgent:
                             iterations=iteration,
                         )
                     )
+                if missing_tools:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "instruction": (
+                                        "Do not return final structured JSON yet. "
+                                        "Call the registered tools required for "
+                                        "the configured checks first."
+                                    ),
+                                    "repo_name": repo.name,
+                                    "required_tools": sorted(missing_tools),
+                                }
+                            ),
+                        }
+                    )
+                    continue
                 return RepoResult(
                     repo_name=repo.name,
                     path=str(repo.path) if repo.path is not None else None,
@@ -381,6 +417,25 @@ def checks_include(repo: RepoConfig, check: CheckName) -> bool:
     """Return whether a repo has a check configured."""
 
     return check in repo.checks
+
+
+def required_evidence_tools(repo: RepoConfig) -> set[str]:
+    """Return safe tools that must run before LLM final output is accepted."""
+
+    tools: set[str] = set()
+    for check in repo.checks:
+        tools.update(CHECK_EVIDENCE_TOOLS.get(check, set()))
+    if any(check in COMMAND_CHECK_LABELS for check in repo.checks):
+        tools.add("run_configured_safe_command")
+    return tools
+
+
+def missing_required_evidence_tools(
+    repo: RepoConfig, completed_tools: set[str]
+) -> set[str]:
+    """Return required evidence tools not yet completed successfully."""
+
+    return required_evidence_tools(repo) - completed_tools
 
 
 def command_result_findings(

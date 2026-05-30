@@ -25,6 +25,10 @@ likely binary files. Traversal prunes blocked directories before descending.
 Tool outputs are JSON-serializable and bounded before they can be returned to an
 LLM.
 
+In LLM mode, configured checks define required evidence tools. The repo
+inspector asks OpenRouter for required tool use until those tools complete, and
+does not accept final structured findings before evidence exists.
+
 ## Configured Command Tool
 
 `run_configured_safe_command` is the only command-execution surface. It does not

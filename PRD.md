@@ -918,6 +918,7 @@ Deliverables:
 - [x] Add OpenRouter client module under `llm/openrouter.py`.
 - [x] Use environment variable `OPENROUTER_API_KEY`; never read it from config.
 - [x] Use `LANGGRAPH_MAINTENANCE_LLM_MODEL` for the default model override.
+- [x] Default OpenRouter model is `deepseek/deepseek-v4-flash`.
 - [x] Document an example model placeholder, not a real private preference.
 - [ ] Add provider/model fields to runtime state and run metadata.
 - [x] Define structured output schema for repo inspector agent:
@@ -983,6 +984,8 @@ Deliverables:
 - [x] Implement sequential `inspect_repo_agent` node or loop.
 - [x] Repo inspector agent must use only registered tools.
 - [x] Enforce max tool calls / max iterations per repo.
+- [x] Require configured-check evidence tool calls before accepting final LLM
+      structured output.
 - [x] Implement `normalize_agent_output` node.
 - [x] Implement `merge_results` node.
 - [x] Implement `summarize_with_agent` node.
@@ -1011,7 +1014,7 @@ Tests:
 - [x] Workflow writes latest report.
 - [x] Workflow dry run does not write files.
 - [x] Workflow no-LLM mode requires no API key.
-- [ ] Workflow LLM mode uses mocked OpenRouter client.
+- [x] Workflow LLM mode uses mocked OpenRouter client.
 - [x] Agent cannot call unregistered tools.
 - [x] Agent tool-call limit produces incomplete check record.
 - [x] Malformed agent output produces validation error and fallback/incomplete
@@ -1024,7 +1027,7 @@ Validation:
       works.
 - [x] `langgraph-maintenance run --config <temp-config> --no-llm` writes a
       report.
-- [ ] Mocked LLM workflow test proves repo inspector agent uses tools.
+- [x] Mocked LLM workflow test proves repo inspector agent uses tools.
 - [x] `python -m pytest` passes.
 
 Exit criteria:

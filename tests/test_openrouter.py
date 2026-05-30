@@ -87,3 +87,35 @@ def test_openrouter_sends_json_schema_response_format() -> None:
     )
 
     assert result.content == '{"ok": true}'
+
+
+def test_openrouter_sends_required_tool_choice() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["tool_choice"] == "required"
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"tool_calls": []}}]},
+        )
+
+    client = OpenRouterClient(
+        api_key="test-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.chat(
+        messages=[{"role": "user", "content": "inspect"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "git_status",
+                    "description": "status",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+        tool_choice="required",
+    )
+
+    assert result.tool_calls == []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -213,6 +214,93 @@ def test_agent_accepts_structured_output(tmp_path: Path) -> None:
     result = agent.inspect(RepoConfig(name="demo", path=tmp_path, enabled=True))
 
     assert len(result.findings) == 1
+
+
+def test_agent_requires_evidence_tools_before_structured_output(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial"], cwd=tmp_path, check=True
+    )
+    payload = {
+        "repo_name": "demo",
+        "summary": "premature",
+        "findings": [],
+    }
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.GIT_STATUS],
+    )
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+                ChatCompletionResult(
+                    tool_calls=[
+                        ChatToolCall(
+                            id="1",
+                            name="git_status",
+                            arguments={"repo_name": "demo"},
+                        ),
+                        ChatToolCall(
+                            id="2",
+                            name="latest_commit",
+                            arguments={"repo_name": "demo"},
+                        ),
+                    ],
+                    raw={},
+                ),
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+    )
+
+    result = agent.inspect(repo)
+
+    assert not result.errors
+
+
+def test_agent_marks_incomplete_when_model_never_calls_required_tools(
+    tmp_path: Path,
+) -> None:
+    payload = {
+        "repo_name": "demo",
+        "summary": "premature",
+        "findings": [],
+    }
+    repo = RepoConfig(
+        name="demo",
+        path=tmp_path,
+        enabled=True,
+        checks=[CheckName.GIT_STATUS],
+    )
+    agent = RepoInspectorAgent(
+        tool_registry=registry_for_repos([repo]),
+        llm_client=FakeClient(
+            [
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+                ChatCompletionResult(content=json.dumps(payload), raw={}),
+            ]
+        ),  # type: ignore[arg-type]
+        max_iterations=2,
+    )
+
+    result = agent.inspect(repo)
+
+    assert result.errors
+    assert "maximum agent iteration limit" in result.errors[0].message
 
 
 def test_agent_ignores_fabricated_command_results(tmp_path: Path) -> None:

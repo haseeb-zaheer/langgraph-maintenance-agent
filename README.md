@@ -52,9 +52,13 @@ Run with OpenRouter-backed tool-using repo inspectors:
 
 ```bash
 export OPENROUTER_API_KEY="sk-or-placeholder"
-export LANGGRAPH_MAINTENANCE_LLM_MODEL="openrouter/model-placeholder"
+export LANGGRAPH_MAINTENANCE_LLM_MODEL="deepseek/deepseek-v4-flash"
 uv run langgraph-maintenance run --config examples/repos.yaml --llm --provider openrouter
 ```
+
+LLM mode requires evidence tool calls before final structured findings are
+accepted. If the model returns a final answer before required tools run, the
+workflow requests tool use instead of trusting unevidenced output.
 
 `--dry-run` performs checks and renders report content in memory, but it does
 not write report files or send Discord messages.

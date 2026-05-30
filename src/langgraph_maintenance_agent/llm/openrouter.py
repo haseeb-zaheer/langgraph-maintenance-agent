@@ -9,7 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
 
 
 class OpenRouterConfigError(RuntimeError):
@@ -62,6 +62,7 @@ class OpenRouterClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         response_schema: dict[str, Any] | None = None,
+        tool_choice: str = "auto",
     ) -> ChatCompletionResult:
         """Call OpenRouter chat completions and parse content/tool calls."""
 
@@ -72,7 +73,7 @@ class OpenRouterClient:
         }
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = tool_choice
         if response_schema:
             payload["response_format"] = {
                 "type": "json_schema",

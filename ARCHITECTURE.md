@@ -38,7 +38,8 @@ command execution:
 - `agents/repo_inspector.py` runs an OpenRouter-backed tool loop or a
   deterministic no-LLM fallback. In no-LLM mode, configured command-style
   checks map to `safe_commands` labels for `tests`, `lint`, `build`, and
-  `python-syntax`.
+  `python-syntax`. In LLM mode, final structured repo output is accepted only
+  after required evidence tools for configured checks have completed.
 - `tools/commands.py` executes only commands explicitly configured for the
   current repo. Commands are parsed with `shlex.split`, run with `shell=False`,
   restricted to approved diagnostic profiles, use the configured repo path as
