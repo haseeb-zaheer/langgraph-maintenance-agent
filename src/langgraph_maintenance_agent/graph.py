@@ -12,6 +12,7 @@ from langgraph.graph import END, StateGraph
 from langgraph_maintenance_agent.agents.repo_inspector import RepoInspectorAgent
 from langgraph_maintenance_agent.config import ConfigError, load_config
 from langgraph_maintenance_agent.llm.openrouter import OpenRouterClient
+from langgraph_maintenance_agent.reporting.redaction import redact_text
 from langgraph_maintenance_agent.runtime.paths import (
     choose_report_path,
     ensure_output_dir,
@@ -182,13 +183,12 @@ def render_markdown_node(state: AgentState) -> AgentState:
 
 
 def redact_report_node(state: AgentState) -> AgentState:
-    """Redact report content before persistence.
+    """Redact report content before persistence."""
 
-    Batch 2 tools already redact bounded outputs before they reach state. The
-    full regex redaction engine is implemented in the report batch.
-    """
-
-    return state
+    report_markdown = state.get("report_markdown")
+    if report_markdown is None:
+        return state
+    return {**state, "report_markdown": redact_text(report_markdown)}
 
 
 def write_report_node(state: AgentState) -> AgentState:

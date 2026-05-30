@@ -6,12 +6,18 @@ from typing import Any
 
 from langgraph_maintenance_agent.agents.repo_inspector import RepoInspectorAgent
 from langgraph_maintenance_agent.config import AppConfig, RepoConfig
-from langgraph_maintenance_agent.graph import run_workflow
+from langgraph_maintenance_agent.graph import (
+    redact_report_node,
+    render_markdown_node,
+    run_workflow,
+    write_report_node,
+)
 from langgraph_maintenance_agent.llm.openrouter import (
     ChatCompletionResult,
     ChatToolCall,
 )
-from langgraph_maintenance_agent.schemas import FindingCategory, Severity
+from langgraph_maintenance_agent.schemas import Finding, FindingCategory, Severity
+from langgraph_maintenance_agent.state import AgentState
 from langgraph_maintenance_agent.tools import build_tool_registry
 from langgraph_maintenance_agent.tools.registry import ToolContext
 
@@ -226,3 +232,40 @@ report:
     assert state["report_path"] is None
     assert not (tmp_path / "reports").exists()
     assert state["repo_results"]
+
+
+def test_report_redaction_runs_before_report_and_latest_write(tmp_path: Path) -> None:
+    config = AppConfig(
+        repos=[RepoConfig(name="demo", path=tmp_path, enabled=True)],
+    )
+    secret_key = "sk-" + "a" * 20
+    bearer_header = "Authorization: " + "Bearer secret-token"
+    finding = Finding(
+        repo_name="demo",
+        severity=Severity.HIGH,
+        category=FindingCategory.SECURITY,
+        title=f"Leaked token {secret_key}",
+        description=f"Header: {bearer_header}",
+    )
+    state: AgentState = {
+        "config": config,
+        "output_dir": str(tmp_path / "reports"),
+        "started_at": "2026-05-30T00:00:00+00:00",
+        "run_id": "test",
+        "dry_run": False,
+        "findings": [finding],
+        "skipped_checks": [],
+        "summary": "summary",
+    }
+
+    rendered = render_markdown_node(state)
+    redacted = redact_report_node(rendered)
+    written = write_report_node(redacted)
+
+    assert written["report_path"] is not None
+    report_text = Path(written["report_path"]).read_text(encoding="utf-8")
+    latest_text = (tmp_path / "reports" / "latest.md").read_text(encoding="utf-8")
+    assert secret_key not in report_text
+    assert "secret-token" not in report_text
+    assert "[redacted]" in report_text
+    assert report_text == latest_text
